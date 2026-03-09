@@ -45,7 +45,6 @@ import { useSmoothStream } from '@proma/ui'
 import { useConversationParallelMode } from '@/hooks/useConversationSettings'
 import { getModelLogo } from '@/lib/model-logo'
 import { userProfileAtom } from '@/atoms/user-profile'
-import { chatMessageLayoutAtom } from '@/atoms/chat-message-layout'
 import type { ChatMessage, ChatToolActivity } from '@proma/shared'
 
 // ===== 滚动到顶部加载更多 =====
@@ -184,8 +183,6 @@ export function ChatMessages({
   onLoadMore,
 }: ChatMessagesProps): React.ReactElement {
   const userProfile = useAtomValue(userProfileAtom)
-  const chatMessageLayout = useAtomValue(chatMessageLayoutAtom)
-  const isLeftRightLayout = chatMessageLayout === 'left-right'
 
   // 平滑流式输出：将高频更新转为逐字渲染
   const { displayedContent: smoothContent } = useSmoothStream({
