@@ -9,8 +9,9 @@
  */
 
 import * as React from 'react'
+import { toast } from 'sonner'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { PanelRight, X, Users, FolderOpen, ExternalLink, RefreshCw, ChevronRight, Folder, FileText, MoreHorizontal, FolderSearch, Pencil, FolderInput, Info, FolderHeart } from 'lucide-react'
+import { PanelRight, X, Users, FolderOpen, ExternalLink, RefreshCw, ChevronRight, ChevronDown, Folder, FileText, MoreHorizontal, FolderSearch, Pencil, FolderInput, Info, FolderPlus, Trash2 } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -20,7 +21,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { cn } from '@/lib/utils'
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { FileBrowser, FileDropZone } from '@/components/file-browser'
 import { TeamActivityPanel } from './TeamActivityPanel'
 import {
@@ -32,7 +44,6 @@ import {
   workspaceFilesVersionAtom,
   currentAgentWorkspaceIdAtom,
   agentWorkspacesAtom,
-  agentAttachedDirectoriesMapAtom,
   workspaceAttachedDirectoriesMapAtom,
 } from '@/atoms/agent-atoms'
 import type { SidePanelTab } from '@/atoms/agent-atoms'
@@ -102,94 +113,100 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   const setFilesVersion = useSetAtom(workspaceFilesVersionAtom)
   const hasFileChanges = filesVersion > 0
 
+  // 工作区文件上传后，刷新文件列表
+  const handleWorkspaceFilesUploaded = React.useCallback(() => {
+    setFilesVersion((prev) => prev + 1)
+  }, [setFilesVersion])
+
   // 派生当前工作区 slug（用于 FileDropZone IPC 调用）
   const currentWorkspaceId = useAtomValue(currentAgentWorkspaceIdAtom)
   const workspaces = useAtomValue(agentWorkspacesAtom)
   const workspaceSlug = workspaces.find((w) => w.id === currentWorkspaceId)?.slug ?? null
 
-  // 附加目录列表（会话级）
-  const attachedDirsMap = useAtomValue(agentAttachedDirectoriesMapAtom)
-  const setAttachedDirsMap = useSetAtom(agentAttachedDirectoriesMapAtom)
-  const attachedDirs = attachedDirsMap.get(sessionId) ?? []
-
-  // 附加目录列表（工作区级）
+  // 工作区文件列表（关联的外部文件夹）
   const wsAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom)
   const setWsAttachedDirsMap = useSetAtom(workspaceAttachedDirectoriesMapAtom)
+
+  // 文件夹关联成功后更新状态
+  const handleFoldersAttached = React.useCallback((updatedDirs: string[]) => {
+    if (!currentWorkspaceId) return
+    setWsAttachedDirsMap((prev) => {
+      const map = new Map(prev)
+      map.set(currentWorkspaceId, updatedDirs)
+      return map
+    })
+  }, [currentWorkspaceId, setWsAttachedDirsMap])
   const wsAttachedDirs = currentWorkspaceId ? (wsAttachedDirsMap.get(currentWorkspaceId) ?? []) : []
 
-  // 加载工作区级附加目录
+  // 工作区文件目录路径（用于显示上传的文件）
+  const [workspaceFilesPath, setWorkspaceFilesPath] = React.useState<string | null>(null)
+
+  // 加载工作区文件列表（关联的外部文件夹 + workspace-files 目录）
   React.useEffect(() => {
     if (!workspaceSlug || !currentWorkspaceId) return
-    window.electronAPI.getWorkspaceDirectories(workspaceSlug)
-      .then((dirs) => {
-        setWsAttachedDirsMap((prev) => {
-          const map = new Map(prev)
-          map.set(currentWorkspaceId, dirs)
-          return map
-        })
-      })
-      .catch(console.error)
-  }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
-
-  const handleAttachFolder = React.useCallback(async () => {
-    try {
-      const result = await window.electronAPI.openFolderDialog()
-      if (!result) return
-
-      const updated = await window.electronAPI.attachDirectory({
-        sessionId,
-        directoryPath: result.path,
-      })
-      setAttachedDirsMap((prev) => {
-        const map = new Map(prev)
-        map.set(sessionId, updated)
-        return map
-      })
-    } catch (error) {
-      console.error('[SidePanel] 附加文件夹失败:', error)
-    }
-  }, [sessionId, setAttachedDirsMap])
-
-  const handleDetachDirectory = React.useCallback(async (dirPath: string) => {
-    try {
-      const updated = await window.electronAPI.detachDirectory({
-        sessionId,
-        directoryPath: dirPath,
-      })
-      setAttachedDirsMap((prev) => {
-        const map = new Map(prev)
-        if (updated.length > 0) {
-          map.set(sessionId, updated)
-        } else {
-          map.delete(sessionId)
-        }
-        return map
-      })
-    } catch (error) {
-      console.error('[SidePanel] 移除附加目录失败:', error)
-    }
-  }, [sessionId, setAttachedDirsMap])
-
-  // 工作区级附加文件夹
-  const handleAttachWorkspaceFolder = React.useCallback(async () => {
-    if (!workspaceSlug || !currentWorkspaceId) return
-    try {
-      const result = await window.electronAPI.openFolderDialog()
-      if (!result) return
-
-      const updated = await window.electronAPI.attachWorkspaceDirectory({
-        workspaceSlug,
-        directoryPath: result.path,
-      })
+    
+    // 获取关联的目录和 workspace-files 路径
+    Promise.all([
+      window.electronAPI.getWorkspaceDirectories(workspaceSlug),
+      window.electronAPI.getWorkspaceFilesPath(workspaceSlug),
+    ]).then(([dirs, filesPath]) => {
       setWsAttachedDirsMap((prev) => {
         const map = new Map(prev)
-        map.set(currentWorkspaceId, updated)
+        map.set(currentWorkspaceId, dirs)
         return map
       })
-    } catch (error) {
-      console.error('[SidePanel] 附加工作区文件夹失败:', error)
-    }
+      setWorkspaceFilesPath(filesPath)
+    }).catch(console.error)
   }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
+
+  // 关联工作区文件或文件夹（外部文件/文件夹）
+  const handleAttachWorkspaceFilesOrFolders = React.useCallback(async () => {
+    if (!workspaceSlug || !currentWorkspaceId) return
+    try {
+      const result = await window.electronAPI.openFileOrFolderDialog()
+      if (!result) return
+
+      // 处理文件夹关联
+      if (result.folders.length > 0) {
+        let updated = wsAttachedDirsMap.get(currentWorkspaceId) ?? []
+        for (const folder of result.folders) {
+          updated = await window.electronAPI.attachWorkspaceDirectory({
+            workspaceSlug,
+            directoryPath: folder.path,
+          })
+        }
+        setWsAttachedDirsMap((prev) => {
+          const map = new Map(prev)
+          map.set(currentWorkspaceId, updated)
+          return map
+        })
+      }
+
+      // 处理文件上传
+      if (result.files.length > 0) {
+        await window.electronAPI.saveFilesToWorkspaceFiles({
+          workspaceSlug,
+          files: result.files,
+        })
+        // 刷新文件列表
+        setFilesVersion((prev) => prev + 1)
+      }
+
+      // 显示提示
+      const folderCount = result.folders.length
+      const fileCount = result.files.length
+      if (folderCount > 0 && fileCount > 0) {
+        toast.success(`已关联 ${folderCount} 个文件夹，上传 ${fileCount} 个文件`)
+      } else if (folderCount > 0) {
+        toast.success(`已关联 ${folderCount} 个文件夹`)
+      } else if (fileCount > 0) {
+        toast.success(`已上传 ${fileCount} 个文件`)
+      }
+    } catch (error) {
+      console.error('[SidePanel] 关联失败:', error)
+      toast.error('关联失败')
+    }
+  }, [workspaceSlug, currentWorkspaceId, wsAttachedDirsMap, setWsAttachedDirsMap, setFilesVersion])
 
   const handleDetachWorkspaceDirectory = React.useCallback(async (dirPath: string) => {
     if (!workspaceSlug || !currentWorkspaceId) return
@@ -208,7 +225,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
         return map
       })
     } catch (error) {
-      console.error('[SidePanel] 移除工作区附加目录失败:', error)
+      console.error('[SidePanel] 移除工作区文件夹失败:', error)
     }
   }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
 
@@ -222,22 +239,51 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
     setFilesVersion((prev) => prev + 1)
   }, [setFilesVersion])
 
-  // 面包屑：显示根路径最后两段
-  const breadcrumb = React.useMemo(() => {
-    if (!sessionPath) return ''
-    const parts = sessionPath.split('/').filter(Boolean)
-    return parts.length > 2 ? `.../${parts.slice(-2).join('/')}` : sessionPath
-  }, [sessionPath])
+  // ===== 文件模块展开/折叠状态和高度计算 =====
+  const [sessionFilesExpanded, setSessionFilesExpanded] = React.useState(true)
+  const [workspaceFilesExpanded, setWorkspaceFilesExpanded] = React.useState(true)
+  const [sessionFilesCount, setSessionFilesCount] = React.useState(0)
 
-  // 工作区文件目录路径
-  const [workspaceFilesPath, setWorkspaceFilesPath] = React.useState<string | null>(null)
+  // 监听本会话文件数量变化
   React.useEffect(() => {
-    if (!workspaceSlug) {
-      setWorkspaceFilesPath(null)
+    if (!sessionPath) {
+      setSessionFilesCount(0)
       return
     }
-    window.electronAPI.getWorkspaceFilesPath(workspaceSlug).then(setWorkspaceFilesPath).catch(() => setWorkspaceFilesPath(null))
-  }, [workspaceSlug])
+    window.electronAPI.listDirectory(sessionPath)
+      .then(items => setSessionFilesCount(items.length))
+      .catch(() => setSessionFilesCount(0))
+  }, [sessionPath, filesVersion])
+
+  // 计算本会话文件区域高度（自适应，最大50%）
+  const sessionSectionStyle = React.useMemo(() => {
+    if (!sessionFilesExpanded) {
+      return { height: '32px' } // 仅标题栏高度
+    }
+    
+    const headerHeight = 32 // 标题栏高度
+    const itemHeight = 28   // 每个文件项高度
+    const maxHeightPercent = 50 // 最大占50%
+    
+    if (sessionFilesCount === 0) {
+      return { height: `${headerHeight}px` }
+    }
+    
+    // 计算内容高度（最多显示5个文件项的高度）
+    const maxVisibleItems = 5
+    const visibleItems = Math.min(sessionFilesCount, maxVisibleItems)
+    const contentHeight = visibleItems * itemHeight
+    const totalHeight = headerHeight + contentHeight
+    
+    // 计算百分比高度（基于面板高度约640px）
+    const containerHeight = 640
+    const calculatedPercent = (totalHeight / containerHeight) * 100
+    
+    return { 
+      height: `${Math.min(calculatedPercent, maxHeightPercent)}%`,
+      minHeight: `${headerHeight + itemHeight}px` // 至少显示一个文件项
+    }
+  }, [sessionFilesCount, sessionFilesExpanded])
 
   // 自动打开：文件变化时（仅在有 sessionPath 时）
   const prevFilesVersionRef = React.useRef(filesVersion)
@@ -253,7 +299,7 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   }, [filesVersion, sessionPath, hasTeamActivity, setIsOpen, setActiveTab])
 
   // 面板是否可显示内容（需要有 sessionPath 或 team 活动）
-  const hasContent = sessionPath || hasTeamActivity || attachedDirs.length > 0
+  const hasContent = sessionPath || hasTeamActivity
 
   return (
     <div
@@ -340,129 +386,139 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
             {/* File Browser Tab */}
             <TabsContent value="files" className="flex-1 overflow-hidden m-0 data-[state=active]:flex data-[state=active]:flex-col">
               {sessionPath && workspaceSlug ? (
-                <div className="flex-1 min-h-0 overflow-y-auto">
-                  {/* ===== 会话文件区 ===== */}
-                  <div className="flex items-center gap-1 px-3 h-[32px] flex-shrink-0">
-                    <FolderOpen className="size-3 text-muted-foreground" />
-                    <span className="text-[11px] font-medium text-muted-foreground">会话文件</span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="size-3 text-muted-foreground/50 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-[200px]">
-                        <p>当前会话的专属文件，仅本次对话的 Agent 可以访问</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <span className="text-[10px] text-muted-foreground/50 truncate flex-1" title={sessionPath}>
-                      {breadcrumb}
-                    </span>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 flex-shrink-0"
-                          onClick={() => window.electronAPI.openFile(sessionPath).catch(console.error)}
-                        >
-                          <ExternalLink className="size-2.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        <p>在 Finder 中打开</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 flex-shrink-0"
-                          onClick={handleRefresh}
-                        >
-                          <RefreshCw className="size-2.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        <p>刷新文件列表</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                  {/* 附加目录列表（可展开目录树） */}
-                  {attachedDirs.length > 0 && (
-                    <AttachedDirsSection
-                      attachedDirs={attachedDirs}
-                      onDetach={handleDetachDirectory}
-                      refreshVersion={filesVersion}
-                    />
-                  )}
-                  {/* 会话文件浏览器 */}
-                  <FileBrowser rootPath={sessionPath} hideToolbar embedded />
-                  {/* 会话文件拖拽上传区域 */}
-                  <FileDropZone
-                    workspaceSlug={workspaceSlug}
-                    sessionId={sessionId}
-                    target="session"
-                    onFilesUploaded={handleFilesUploaded}
-                    onAttachFolder={handleAttachFolder}
-                  />
-
-                  {/* ===== 分隔线 ===== */}
-                  <div className="mx-3 my-3 border-t border-dashed border-muted-foreground/20" />
-
-                  {/* ===== 工作区文件区 ===== */}
-                  <div className="bg-muted/30 rounded-lg mx-2 mb-2 pb-1">
-                    <div className="flex items-center gap-1 px-2 h-[32px] flex-shrink-0">
-                      <FolderHeart className="size-3 text-primary/70" />
-                      <span className="text-[11px] font-medium text-primary/70">工作区文件</span>
+                <div className="flex flex-col flex-1 min-h-0">
+                  {/* ===== 本会话文件区（上方，自适应高度，最大50%） ===== */}
+                  <div 
+                    className="flex flex-col min-h-0 border-b border-dashed border-muted-foreground/20 transition-all duration-300 ease-in-out"
+                    style={sessionSectionStyle}
+                  >
+                    {/* 标题栏 - 可点击展开/折叠 */}
+                    <div 
+                      className="flex items-center gap-1 px-3 h-[32px] flex-shrink-0 cursor-pointer hover:bg-accent/30 rounded-sm transition-colors"
+                      onClick={() => setSessionFilesExpanded(v => !v)}
+                    >
+                      {sessionFilesExpanded ? (
+                        <ChevronDown className="size-3 text-muted-foreground/70" />
+                      ) : (
+                        <ChevronRight className="size-3 text-muted-foreground/70" />
+                      )}
+                      <FolderOpen className="size-3 text-muted-foreground" />
+                      <span className="text-[11px] font-medium text-muted-foreground">本会话文件</span>
+                      {sessionFilesCount > 0 && (
+                        <span className="text-[10px] text-muted-foreground/50 ml-1">({sessionFilesCount})</span>
+                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Info className="size-3 text-primary/40 cursor-help" />
+                          <Info className="size-3 text-muted-foreground/50 cursor-help ml-1" />
                         </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-[220px]">
-                          <p>工作区内所有会话可访问的文件和文件夹，每个新对话都可以自动读取</p>
+                        <TooltipContent side="bottom" className="max-w-[200px]">
+                          <p>当前会话的专属文件，仅本次对话的 Agent 可以访问，新对话不继承</p>
                         </TooltipContent>
                       </Tooltip>
                       <div className="flex-1" />
-                      {workspaceFilesPath && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 flex-shrink-0"
-                              onClick={() => window.electronAPI.openFile(workspaceFilesPath).catch(console.error)}
-                            >
-                              <ExternalLink className="size-2.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            <p>在 Finder 中打开工作区文件目录</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 flex-shrink-0"
+                            onClick={(e) => { e.stopPropagation(); window.electronAPI.openFile(sessionPath).catch(console.error) }}
+                          >
+                            <ExternalLink className="size-2.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>在 Finder 中打开</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 flex-shrink-0"
+                            onClick={(e) => { e.stopPropagation(); handleRefresh() }}
+                          >
+                            <RefreshCw className="size-2.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>刷新文件列表</p>
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
-                    {/* 工作区级附加目录 */}
-                    {wsAttachedDirs.length > 0 && (
-                      <AttachedDirsSection
-                        attachedDirs={wsAttachedDirs}
-                        onDetach={handleDetachWorkspaceDirectory}
-                        refreshVersion={filesVersion}
-                      />
-                    )}
-                    {/* 工作区文件浏览器 */}
-                    {workspaceFilesPath && (
-                      <FileBrowser rootPath={workspaceFilesPath} hideToolbar embedded />
-                    )}
-                    {/* 工作区文件拖拽上传区域 */}
-                    <FileDropZone
-                      workspaceSlug={workspaceSlug}
-                      target="workspace"
-                      onFilesUploaded={handleFilesUploaded}
-                      onAttachFolder={handleAttachWorkspaceFolder}
-                    />
+                    {/* 本会话文件浏览器（可滚动）- 仅查看对话中上传的附件 */}
+                    <Collapsible open={sessionFilesExpanded} className="flex-1 min-h-0">
+                      <CollapsibleContent className="h-full overflow-y-auto data-[state=closed]:hidden">
+                        <FileBrowser rootPath={sessionPath} hideToolbar embedded />
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </div>
+
+                  {/* ===== 工作区文件区（下方，占据剩余空间） ===== */}
+                  <div className="flex flex-col flex-1 min-h-0">
+                    {/* 标题栏 - 可点击展开/折叠 */}
+                    <div 
+                      className="flex items-center gap-1 px-3 h-[32px] flex-shrink-0 cursor-pointer hover:bg-accent/30 rounded-sm transition-colors"
+                      onClick={() => setWorkspaceFilesExpanded(v => !v)}
+                    >
+                      {workspaceFilesExpanded ? (
+                        <ChevronDown className="size-3 text-primary/70" />
+                      ) : (
+                        <ChevronRight className="size-3 text-primary/70" />
+                      )}
+                      <FolderOpen className="size-3 text-primary/70" />
+                      <span className="text-[11px] font-medium text-primary/70">工作区文件</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="size-3 text-primary/40 cursor-help ml-1" />
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-[220px]">
+                          <p>关联的外部文件夹，工作区内所有会话可访问，Agent 可直接修改原位置的文件</p>
+                        </TooltipContent>
+                      </Tooltip>
+                      <div className="flex-1" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 flex-shrink-0 text-primary/70 hover:text-primary"
+                            onClick={(e) => { e.stopPropagation(); handleAttachWorkspaceFilesOrFolders() }}
+                          >
+                            <FolderPlus className="size-2.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          <p>关联文件或文件夹</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    {/* 工作区文件列表（可滚动） - 支持拖拽 */}
+                    <Collapsible open={workspaceFilesExpanded} className="flex-1 min-h-0">
+                      <CollapsibleContent className="h-full overflow-y-auto data-[state=closed]:hidden relative">
+                        <FileDropZone
+                          workspaceSlug={workspaceSlug ?? ''}
+                          target="workspace"
+                          onFilesUploaded={handleWorkspaceFilesUploaded}
+                          onFoldersAttached={handleFoldersAttached}
+                          className="h-full"
+                          hideUI={wsAttachedDirs.length > 0 || !!workspaceFilesPath}
+                        >
+                          {(wsAttachedDirs.length > 0 || workspaceFilesPath) ? (
+                            <WorkspaceFilesSection
+                              attachedDirs={wsAttachedDirs}
+                              onDetach={handleDetachWorkspaceDirectory}
+                              refreshVersion={filesVersion}
+                              workspaceFilesPath={workspaceFilesPath}
+                            />
+                          ) : null}
+                        </FileDropZone>
+                      </CollapsibleContent>
+                    </Collapsible>
                   </div>
                 </div>
               ) : (
@@ -478,78 +534,133 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
   )
 }
 
-// ===== 附加目录容器（管理选中状态） =====
+// ===== 工作区文件容器（关联的外部文件夹） =====
 
-interface AttachedDirsSectionProps {
+interface WorkspaceFilesSectionProps {
   attachedDirs: string[]
   onDetach: (dirPath: string) => void
   /** 文件版本号，用于自动刷新已展开的目录 */
   refreshVersion: number
+  /** workspace-files 目录路径（用于显示上传的文件） */
+  workspaceFilesPath: string | null
 }
 
-/** 附加目录区域：统一管理所有子项的选中状态 */
-function AttachedDirsSection({ attachedDirs, onDetach, refreshVersion }: AttachedDirsSectionProps): React.ReactElement {
+/** 工作区文件区域：统一管理所有关联的外部文件夹和上传的文件 */
+function WorkspaceFilesSection({ attachedDirs, onDetach, refreshVersion, workspaceFilesPath }: WorkspaceFilesSectionProps): React.ReactElement {
   const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(new Set())
+  // 最后选中的路径（用于 Shift 范围选择的锚点）
+  const lastSelectedPathRef = React.useRef<string | null>(null)
+  // 所有可见文件路径（用于 Shift 范围选择）
+  const allVisiblePathsRef = React.useRef<Set<string>>(new Set())
 
-  const handleSelect = React.useCallback((path: string, ctrlKey: boolean) => {
+  // 注册/注销可见路径
+  const registerVisiblePath = React.useCallback((path: string) => {
+    allVisiblePathsRef.current.add(path)
+  }, [])
+  const unregisterVisiblePath = React.useCallback((path: string) => {
+    allVisiblePathsRef.current.delete(path)
+  }, [])
+
+  const handleSelect = React.useCallback((path: string, ctrlKey: boolean, shiftKey: boolean) => {
     setSelectedPaths((prev) => {
+      if (shiftKey && lastSelectedPathRef.current && allVisiblePathsRef.current.size > 0) {
+        // Shift+点击：范围选择
+        const allPaths = Array.from(allVisiblePathsRef.current)
+        const anchorIndex = allPaths.indexOf(lastSelectedPathRef.current)
+        const targetIndex = allPaths.indexOf(path)
+        if (anchorIndex !== -1 && targetIndex !== -1) {
+          const start = Math.min(anchorIndex, targetIndex)
+          const end = Math.max(anchorIndex, targetIndex)
+          const rangePaths = allPaths.slice(start, end + 1)
+          // 保持之前选中的，添加范围内的
+          return new Set([...prev, ...rangePaths])
+        }
+      }
+      
       if (ctrlKey) {
         // Ctrl+点击：切换选中
         const next = new Set(prev)
         if (next.has(path)) {
           next.delete(path)
+          if (lastSelectedPathRef.current === path) {
+            lastSelectedPathRef.current = null
+          }
         } else {
           next.add(path)
+          lastSelectedPathRef.current = path
         }
         return next
       }
+      
       // 普通点击：单选
+      lastSelectedPathRef.current = path
       return new Set([path])
     })
   }, [])
 
   return (
-    <div className="pt-2.5 pb-1 flex-shrink-0">
-      <div className="text-[11px] font-medium text-muted-foreground mb-1 px-3">附加目录（Agent 可以读取并操作此文件夹）</div>
+    <div className="pt-1 pb-1 flex-shrink-0">
+      {/* workspace-files 目录（显示上传的文件） */}
+      {workspaceFilesPath && (
+        <WorkspaceDirTree
+          key="__workspace_files__"
+          dirPath={workspaceFilesPath}
+          onDetach={() => {}} // 不可分离
+          selectedPaths={selectedPaths}
+          onSelect={handleSelect}
+          refreshVersion={refreshVersion}
+          isSystemDir
+          registerVisiblePath={registerVisiblePath}
+          unregisterVisiblePath={unregisterVisiblePath}
+        />
+      )}
       {attachedDirs.map((dir) => (
-        <AttachedDirTree
+        <WorkspaceDirTree
           key={dir}
           dirPath={dir}
           onDetach={() => onDetach(dir)}
           selectedPaths={selectedPaths}
           onSelect={handleSelect}
           refreshVersion={refreshVersion}
+          registerVisiblePath={registerVisiblePath}
+          unregisterVisiblePath={unregisterVisiblePath}
         />
       ))}
     </div>
   )
 }
 
-// ===== 附加目录树组件 =====
+// ===== 工作区目录树组件 =====
 
-interface AttachedDirTreeProps {
+interface WorkspaceDirTreeProps {
   dirPath: string
   onDetach: () => void
   selectedPaths: Set<string>
-  onSelect: (path: string, ctrlKey: boolean) => void
+  onSelect: (path: string, ctrlKey: boolean, shiftKey: boolean) => void
   /** 文件版本号，变化时已展开的目录自动重新加载 */
   refreshVersion: number
+  /** 是否为系统目录（workspace-files/），不可分离，显示特殊名称 */
+  isSystemDir?: boolean
+  /** 注册可见路径（用于 Shift 范围选择） */
+  registerVisiblePath?: (path: string) => void
+  /** 注销可见路径 */
+  unregisterVisiblePath?: (path: string) => void
 }
 
-/** 附加目录根节点：可展开/收起，带移除按钮 */
-function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVersion }: AttachedDirTreeProps): React.ReactElement {
+/** 工作区目录根节点：可展开/收起，带移除按钮 */
+function WorkspaceDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVersion, isSystemDir, registerVisiblePath, unregisterVisiblePath }: WorkspaceDirTreeProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
 
-  const dirName = dirPath.split('/').filter(Boolean).pop() || dirPath
+  const dirName = isSystemDir ? '上传文件' : (dirPath.split('/').filter(Boolean).pop() || dirPath)
 
   // 当 refreshVersion 变化时，已展开的目录自动重新加载
   React.useEffect(() => {
     if (expanded && loaded) {
       window.electronAPI.listAttachedDirectory(dirPath)
         .then((items) => setChildren(items))
-        .catch((err) => console.error('[AttachedDirTree] 刷新失败:', err))
+        .catch((err) => console.error('[WorkspaceDirTree] 刷新失败:', err))
     }
   }, [refreshVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -560,10 +671,19 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
         setChildren(items)
         setLoaded(true)
       } catch (err) {
-        console.error('[AttachedDirTree] 加载失败:', err)
+        console.error('[WorkspaceDirTree] 加载失败:', err)
       }
     }
     setExpanded(!expanded)
+  }
+
+  // 处理根节点点击（支持 Shift 范围选择）
+  const handleClick = (e: React.MouseEvent) => {
+    // Shift 多选时阻止默认文本选择行为
+    if (e.shiftKey) {
+      e.preventDefault()
+    }
+    onSelect(dirPath, e.ctrlKey || e.metaKey, e.shiftKey)
   }
 
   return (
@@ -586,15 +706,17 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
         <span className="text-xs truncate flex-1" title={dirPath}>
           {dirName}
         </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-          onClick={(e) => { e.stopPropagation(); onDetach() }}
-        >
-          <X className="size-3" />
-        </Button>
+        {!isSystemDir && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+            onClick={(e) => { e.stopPropagation(); onDetach() }}
+          >
+            <X className="size-3" />
+          </Button>
+        )}
       </div>
       {expanded && children.length === 0 && loaded && (
         <div className="text-[11px] text-muted-foreground/50 py-1" style={{ paddingLeft: 48 }}>
@@ -602,23 +724,36 @@ function AttachedDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVe
         </div>
       )}
       {expanded && children.map((child) => (
-        <AttachedDirItem key={child.path} entry={child} depth={1} selectedPaths={selectedPaths} onSelect={onSelect} refreshVersion={refreshVersion} />
+        <WorkspaceDirItem 
+          key={child.path} 
+          entry={child} 
+          depth={1} 
+          selectedPaths={selectedPaths} 
+          onSelect={onSelect} 
+          refreshVersion={refreshVersion}
+          registerVisiblePath={registerVisiblePath}
+          unregisterVisiblePath={unregisterVisiblePath}
+        />
       ))}
     </div>
   )
 }
 
-interface AttachedDirItemProps {
+interface WorkspaceDirItemProps {
   entry: FileEntry
   depth: number
   selectedPaths: Set<string>
-  onSelect: (path: string, ctrlKey: boolean) => void
+  onSelect: (path: string, ctrlKey: boolean, shiftKey: boolean) => void
   /** 文件版本号，变化时已展开的目录自动重新加载 */
   refreshVersion: number
+  /** 注册可见路径（用于 Shift 范围选择） */
+  registerVisiblePath?: (path: string) => void
+  /** 注销可见路径 */
+  unregisterVisiblePath?: (path: string) => void
 }
 
-/** 附加目录子项：递归可展开，支持选中 + 三点菜单（含重命名、移动） */
-function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion }: AttachedDirItemProps): React.ReactElement {
+/** 工作区目录子项：递归可展开，支持选中 + 三点菜单（含重命名、移动） */
+function WorkspaceDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion, registerVisiblePath, unregisterVisiblePath }: WorkspaceDirItemProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
@@ -629,15 +764,25 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
   // 当前显示的名称和路径（重命名后更新）
   const [currentName, setCurrentName] = React.useState(entry.name)
   const [currentPath, setCurrentPath] = React.useState(entry.path)
+  // 删除确认状态
+  const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
 
   const isSelected = selectedPaths.has(currentPath)
+
+  // 注册/注销可见路径（用于 Shift 范围选择）
+  React.useEffect(() => {
+    registerVisiblePath?.(currentPath)
+    return () => {
+      unregisterVisiblePath?.(currentPath)
+    }
+  }, [currentPath])
 
   // 当 refreshVersion 变化时，已展开的文件夹自动重新加载子项
   React.useEffect(() => {
     if (expanded && loaded && entry.isDirectory) {
       window.electronAPI.listAttachedDirectory(currentPath)
         .then((items) => setChildren(items))
-        .catch((err) => console.error('[AttachedDirItem] 刷新子目录失败:', err))
+        .catch((err) => console.error('[WorkspaceDirItem] 刷新子目录失败:', err))
     }
   }, [refreshVersion]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -649,15 +794,19 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
         setChildren(items)
         setLoaded(true)
       } catch (err) {
-        console.error('[AttachedDirItem] 加载子目录失败:', err)
+        console.error('[WorkspaceDirItem] 加载子目录失败:', err)
       }
     }
     setExpanded(!expanded)
   }
 
   const handleClick = (e: React.MouseEvent): void => {
-    onSelect(currentPath, e.ctrlKey || e.metaKey)
-    if (entry.isDirectory) {
+    // Shift 多选时阻止默认文本选择行为
+    if (e.shiftKey) {
+      e.preventDefault()
+    }
+    onSelect(currentPath, e.ctrlKey || e.metaKey, e.shiftKey)
+    if (entry.isDirectory && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       toggleDir()
     }
   }
@@ -689,11 +838,11 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
       const parentDir = currentPath.substring(0, currentPath.lastIndexOf('/'))
       const newPath = `${parentDir}/${newName}`
       // 更新选中状态中的路径
-      onSelect(newPath, false)
+      onSelect(newPath, false, false)
       setCurrentName(newName)
       setCurrentPath(newPath)
     } catch (err) {
-      console.error('[AttachedDirItem] 重命名失败:', err)
+      console.error('[WorkspaceDirItem] 重命名失败:', err)
     }
     setIsRenaming(false)
   }
@@ -714,8 +863,20 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
       const newPath = `${result.path}/${currentName}`
       setCurrentPath(newPath)
     } catch (err) {
-      console.error('[AttachedDirItem] 移动失败:', err)
+      console.error('[WorkspaceDirItem] 移动失败:', err)
     }
+  }
+
+  // 删除文件/目录
+  const handleDelete = async (): Promise<void> => {
+    try {
+      await window.electronAPI.deleteAttachedFile(currentPath)
+      // 通知父组件刷新（通过选择空路径触发）
+      onSelect('', false, false)
+    } catch (err) {
+      console.error('[WorkspaceDirItem] 删除失败:', err)
+    }
+    setShowDeleteDialog(false)
   }
 
   const paddingLeft = 8 + depth * 16
@@ -816,6 +977,13 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
                   <FolderInput />
                   移动到...
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-xs py-1 [&>svg]:size-3.5 text-destructive focus:text-destructive"
+                  onSelect={() => setShowDeleteDialog(true)}
+                >
+                  <Trash2 />
+                  删除
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -830,8 +998,37 @@ function AttachedDirItem({ entry, depth, selectedPaths, onSelect, refreshVersion
         </div>
       )}
       {expanded && children.map((child) => (
-        <AttachedDirItem key={child.path} entry={child} depth={depth + 1} selectedPaths={selectedPaths} onSelect={onSelect} refreshVersion={refreshVersion} />
+        <WorkspaceDirItem 
+          key={child.path} 
+          entry={child} 
+          depth={depth + 1} 
+          selectedPaths={selectedPaths} 
+          onSelect={onSelect} 
+          refreshVersion={refreshVersion}
+          registerVisiblePath={registerVisiblePath}
+          unregisterVisiblePath={unregisterVisiblePath}
+        />
       ))}
+
+      {/* 删除确认对话框 */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除 <strong>{currentName}</strong> 吗？
+              {entry.isDirectory && '（包含所有子文件）'}
+              此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowDeleteDialog(false)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }

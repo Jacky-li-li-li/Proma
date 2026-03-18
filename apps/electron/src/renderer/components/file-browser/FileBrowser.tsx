@@ -221,11 +221,7 @@ export function FileBrowser({ rootPath, hideToolbar, embedded }: FileBrowserProp
       {error && (
         <div className="px-3 py-2 text-xs text-destructive">{error}</div>
       )}
-      {!error && entries.length === 0 && !loading && (
-        <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-          目录为空
-        </div>
-      )}
+      {/* 空目录时不显示提示，由外部拖拽区域处理 */}
       {entries.map((entry) => (
         <FileTreeItem
           key={entry.path}
@@ -281,7 +277,11 @@ export function FileBrowser({ rootPath, hideToolbar, embedded }: FileBrowserProp
       )}
 
       {/* 文件树 */}
-      {embedded ? fileTree : (
+      {embedded ? (
+        <div className="flex-1 min-h-0">
+          {fileTree}
+        </div>
+      ) : (
         <ScrollArea className="flex-1">
           {fileTree}
         </ScrollArea>

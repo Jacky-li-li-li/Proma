@@ -565,6 +565,14 @@ export interface FileIndexEntry {
   path: string
   /** 条目类型 */
   type: 'file' | 'dir'
+  /** 文件来源：本会话文件或工作区文件 */
+  source?: 'session' | 'workspace'
+  /** 所属文件夹名称（如 "上传文件", "voc", "generated"） */
+  folder?: string
+  /** 文件夹完整路径 */
+  folderPath?: string
+  /** 在文件夹内的层级深度（0=根，1=子文件夹） */
+  depth?: number
 }
 
 /** 文件搜索结果 */
@@ -604,20 +612,20 @@ export interface AgentSaveWorkspaceFilesInput {
   files: Array<{ filename: string; data: string }>
 }
 
-/** 附加/分离目录的输入参数 */
-export interface AgentAttachDirectoryInput {
-  /** 会话 ID */
-  sessionId: string
-  /** 目录的绝对路径 */
-  directoryPath: string
-}
-
-/** 工作区级附加/分离目录的输入参数 */
+/** 关联外部目录到工作区的输入参数 */
 export interface WorkspaceAttachDirectoryInput {
   /** 工作区 slug */
   workspaceSlug: string
   /** 目录的绝对路径 */
   directoryPath: string
+}
+
+/** 文件或文件夹选择结果 */
+export interface FileOrFolderDialogResult {
+  /** 选择的文件列表（base64 编码） */
+  files: Array<{ filename: string; data: string }>
+  /** 选择的文件夹路径列表 */
+  folders: Array<{ path: string; name: string }>
 }
 
 // ===== AskUserQuestion 交互式问答类型 =====
@@ -866,11 +874,9 @@ export const AGENT_IPC_CHANNELS = {
   GET_WORKSPACE_FILES_PATH: 'agent:get-workspace-files-path',
   /** 打开文件夹选择对话框 */
   OPEN_FOLDER_DIALOG: 'agent:open-folder-dialog',
-  /** 附加外部目录到 Agent 会话 */
-  ATTACH_DIRECTORY: 'agent:attach-directory',
-  /** 移除会话的附加目录 */
-  DETACH_DIRECTORY: 'agent:detach-directory',
-  /** 附加外部目录到工作区（所有会话共享） */
+  /** 打开文件或文件夹选择对话框（同时支持） */
+  OPEN_FILE_OR_FOLDER_DIALOG: 'agent:open-file-or-folder-dialog',
+  /** 关联外部目录到工作区（所有会话共享） */
   ATTACH_WORKSPACE_DIRECTORY: 'agent:attach-workspace-directory',
   /** 移除工作区的附加目录 */
   DETACH_WORKSPACE_DIRECTORY: 'agent:detach-workspace-directory',
@@ -904,6 +910,8 @@ export const AGENT_IPC_CHANNELS = {
   RENAME_ATTACHED_FILE: 'agent:rename-attached-file',
   /** 移动附加目录文件/目录（无工作区路径限制） */
   MOVE_ATTACHED_FILE: 'agent:move-attached-file',
+  /** 删除附加目录文件/空目录（无工作区路径限制） */
+  DELETE_ATTACHED_FILE: 'agent:delete-attached-file',
   /** 搜索工作区文件（用于 @ 引用） */
   SEARCH_WORKSPACE_FILES: 'agent:search-workspace-files',
 

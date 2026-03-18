@@ -112,8 +112,12 @@ function createWindow(): void {
   })
 
   // Load the renderer
-  // 强制使用本地构建文件，不依赖开发服务器
-  mainWindow.loadFile(join(__dirname, 'renderer', 'index.html'))
+  // 开发模式使用 Vite 服务器，生产模式使用本地文件
+  if (process.env.NODE_ENV === 'development') {
+    mainWindow.loadURL('http://localhost:5173/')
+  } else {
+    mainWindow.loadFile(join(__dirname, 'renderer', 'index.html'))
+  }
 
   // 窗口就绪后最大化显示
   mainWindow.once('ready-to-show', () => {

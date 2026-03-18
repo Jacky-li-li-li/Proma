@@ -5,7 +5,7 @@
  * 使用上下文隔离确保安全性
  */
 
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC_CHANNELS, CHANNEL_IPC_CHANNELS, CHAT_IPC_CHANNELS, AGENT_IPC_CHANNELS, ENVIRONMENT_IPC_CHANNELS, PROXY_IPC_CHANNELS, GITHUB_RELEASE_IPC_CHANNELS, SYSTEM_PROMPT_IPC_CHANNELS, MEMORY_IPC_CHANNELS, CHAT_TOOL_IPC_CHANNELS, FEISHU_IPC_CHANNELS } from '@proma/shared'
 import { USER_PROFILE_IPC_CHANNELS, SETTINGS_IPC_CHANNELS } from '../types'
 import type {
@@ -40,7 +40,6 @@ import type {
   AgentSaveFilesInput,
   AgentSaveWorkspaceFilesInput,
   AgentSavedFile,
-  AgentAttachDirectoryInput,
   WorkspaceAttachDirectoryInput,
   GetTaskOutputInput,
   GetTaskOutputResult,
@@ -105,6 +104,9 @@ export interface ElectronAPI {
 
   /** 在系统默认浏览器中打开外部链接 */
   openExternal: (url: string) => Promise<void>
+
+  /** 获取文件的本地路径（用于拖拽文件夹，contextIsolation 安全方式） */
+  getFilePath: (file: File) => string
 
   // ===== 渠道管理相关 =====
 
@@ -433,13 +435,10 @@ export interface ElectronAPI {
   /** 打开文件夹选择对话框 */
   openFolderDialog: () => Promise<{ path: string; name: string } | null>
 
-  /** 附加外部目录到 Agent 会话 */
-  attachDirectory: (input: AgentAttachDirectoryInput) => Promise<string[]>
+  /** 打开文件或文件夹选择对话框（同时支持） */
+  openFileOrFolderDialog: () => Promise<import('@proma/shared').FileOrFolderDialogResult | null>
 
-  /** 移除会话的附加目录 */
-  detachDirectory: (input: AgentAttachDirectoryInput) => Promise<string[]>
-
-  /** 附加外部目录到工作区（所有会话可访问） */
+  /** 关联外部目录到工作区（所有会话可访问） */
   attachWorkspaceDirectory: (input: WorkspaceAttachDirectoryInput) => Promise<string[]>
 
   /** 移除工作区的附加目录 */
@@ -488,6 +487,9 @@ export interface ElectronAPI {
 
   /** 移动附加目录文件/目录（无工作区路径限制） */
   moveAttachedFile: (filePath: string, targetDir: string) => Promise<void>
+
+  /** 删除附加目录文件/空目录（无工作区路径限制） */
+  deleteAttachedFile: (filePath: string) => Promise<void>
 
   /** 搜索工作区文件（用于 @ 引用，支持附加目录） */
   searchWorkspaceFiles: (rootPath: string, query: string, limit?: number, additionalPaths?: string[]) => Promise<FileSearchResult>
@@ -588,6 +590,10 @@ const electronAPI: ElectronAPI = {
   // 通用工具
   openExternal: (url: string) => {
     return ipcRenderer.invoke(IPC_CHANNELS.OPEN_EXTERNAL, url)
+  },
+
+  getFilePath: (file: File) => {
+    return webUtils.getPathForFile(file)
   },
 
   // 渠道管理
@@ -1034,12 +1040,8 @@ const electronAPI: ElectronAPI = {
     return ipcRenderer.invoke(AGENT_IPC_CHANNELS.OPEN_FOLDER_DIALOG)
   },
 
-  attachDirectory: (input: AgentAttachDirectoryInput) => {
-    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.ATTACH_DIRECTORY, input)
-  },
-
-  detachDirectory: (input: AgentAttachDirectoryInput) => {
-    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.DETACH_DIRECTORY, input)
+  openFileOrFolderDialog: () => {
+    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.OPEN_FILE_OR_FOLDER_DIALOG)
   },
 
   attachWorkspaceDirectory: (input: WorkspaceAttachDirectoryInput) => {
@@ -1105,6 +1107,10 @@ const electronAPI: ElectronAPI = {
 
   moveAttachedFile: (filePath: string, targetDir: string) => {
     return ipcRenderer.invoke(AGENT_IPC_CHANNELS.MOVE_ATTACHED_FILE, filePath, targetDir)
+  },
+
+  deleteAttachedFile: (filePath: string) => {
+    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.DELETE_ATTACHED_FILE, filePath)
   },
 
   searchWorkspaceFiles: (rootPath: string, query: string, limit = 20, additionalPaths?: string[]) => {

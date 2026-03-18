@@ -32,7 +32,6 @@ import type {
   AgentSaveFilesInput,
   AgentSaveWorkspaceFilesInput,
   AgentSavedFile,
-  AgentAttachDirectoryInput,
   WorkspaceAttachDirectoryInput,
   GetTaskOutputInput,
   GetTaskOutputResult,
@@ -1140,41 +1139,46 @@ export function registerIpcHandlers(): void {
     }
   )
 
-  // 附加外部目录到 Agent 会话
+  // 打开文件或文件夹选择对话框（同时支持）
   ipcMain.handle(
-    AGENT_IPC_CHANNELS.ATTACH_DIRECTORY,
-    async (_, input: AgentAttachDirectoryInput): Promise<string[]> => {
-      const meta = getAgentSessionMeta(input.sessionId)
-      if (!meta) throw new Error(`会话不存在: ${input.sessionId}`)
+    AGENT_IPC_CHANNELS.OPEN_FILE_OR_FOLDER_DIALOG,
+    async (): Promise<import('@proma/shared').FileOrFolderDialogResult | null> => {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+      if (!win) return null
 
-      const existing = meta.attachedDirectories ?? []
-      if (existing.includes(input.directoryPath)) return existing
+      const result = await dialog.showOpenDialog(win, {
+        properties: ['openFile', 'openDirectory', 'multiSelections'],
+        title: '选择文件或文件夹',
+        filters: [
+          { name: '支持的文件', extensions: ['*'] },
+          { name: '所有文件', extensions: ['*'] },
+        ],
+      })
 
-      const updated = [...existing, input.directoryPath]
-      updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated })
-      // 启动附加目录文件监听
-      watchAttachedDirectory(input.directoryPath)
-      return updated
+      if (result.canceled || result.filePaths.length === 0) return null
+
+      const { readFileSync } = await import('node:fs')
+      const files: Array<{ filename: string; data: string }> = []
+      const folders: Array<{ path: string; name: string }> = []
+      const { statSync } = await import('node:fs')
+
+      for (const filePath of result.filePaths) {
+        const stats = statSync(filePath)
+        if (stats.isDirectory()) {
+          const name = filePath.split('/').filter(Boolean).pop() || 'folder'
+          folders.push({ path: filePath, name })
+        } else {
+          const filename = filePath.split('/').filter(Boolean).pop() || 'file'
+          const buffer = readFileSync(filePath)
+          files.push({ filename, data: buffer.toString('base64') })
+        }
+      }
+
+      return { files, folders }
     }
   )
 
-  // 移除会话的附加目录
-  ipcMain.handle(
-    AGENT_IPC_CHANNELS.DETACH_DIRECTORY,
-    async (_, input: AgentAttachDirectoryInput): Promise<string[]> => {
-      const meta = getAgentSessionMeta(input.sessionId)
-      if (!meta) throw new Error(`会话不存在: ${input.sessionId}`)
-
-      const existing = meta.attachedDirectories ?? []
-      const updated = existing.filter((d) => d !== input.directoryPath)
-      updateAgentSessionMeta(input.sessionId, { attachedDirectories: updated })
-      // 停止附加目录文件监听
-      unwatchAttachedDirectory(input.directoryPath)
-      return updated
-    }
-  )
-
-  // 附加外部目录到工作区（所有会话可访问）
+  // 关联外部目录到工作区（所有会话可访问）
   ipcMain.handle(
     AGENT_IPC_CHANNELS.ATTACH_WORKSPACE_DIRECTORY,
     async (_, input: WorkspaceAttachDirectoryInput): Promise<string[]> => {
@@ -1425,6 +1429,19 @@ export function registerIpcHandlers(): void {
       const newPath = join(resolve(targetDir), basename(safePath))
       renameSync(safePath, newPath)
       console.log(`[附加目录] 已移动: ${safePath} → ${newPath}`)
+    }
+  )
+
+  // 删除附加目录文件/空目录（无工作区路径限制）
+  ipcMain.handle(
+    AGENT_IPC_CHANNELS.DELETE_ATTACHED_FILE,
+    async (_, filePath: string): Promise<void> => {
+      const { rmSync } = await import('node:fs')
+      const { resolve } = await import('node:path')
+
+      const safePath = resolve(filePath)
+      rmSync(safePath, { recursive: true, force: true })
+      console.log(`[附加目录] 已删除: ${safePath}`)
     }
   )
 

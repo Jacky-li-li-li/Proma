@@ -51,8 +51,6 @@ import {
   dismissedTeamSessionIdsAtom,
   buildTeamActivityEntries,
   rebuildTeamDataFromMessages,
-  agentAttachedDirectoriesMapAtom,
-  workspaceAttachedDirectoriesMapAtom,
 } from '@/atoms/agent-atoms'
 import type { AgentContextStatus } from '@/atoms/agent-atoms'
 import { activeViewAtom } from '@/atoms/active-view'
@@ -90,12 +88,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
   const setCurrentAgentSessionId = useSetAtom(currentAgentSessionIdAtom)
   const [tabs, setTabs] = useAtom(tabsAtom)
   const [layout, setLayout] = useAtom(splitLayoutAtom)
-  const setAttachedDirsMap = useSetAtom(agentAttachedDirectoriesMapAtom)
-  const attachedDirsMap = useAtomValue(agentAttachedDirectoriesMapAtom)
-  const attachedDirs = attachedDirsMap.get(sessionId) ?? []
-  const wsAttachedDirsMap = useAtomValue(workspaceAttachedDirectoriesMapAtom)
-  const wsAttachedDirs = currentWorkspaceId ? (wsAttachedDirsMap.get(currentWorkspaceId) ?? []) : []
-
   const draftsMap = useAtomValue(agentSessionDraftsAtom)
   const setDraftsMap = useSetAtom(agentSessionDraftsAtom)
   const inputContent = draftsMap.get(sessionId) ?? ''
@@ -148,9 +140,13 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       return
     }
 
+    console.log('[AgentView] Getting session path for:', sessionId, currentWorkspaceId)
     window.electronAPI
       .getAgentSessionPath(currentWorkspaceId, sessionId)
-      .then(setSessionPath)
+      .then((path) => {
+        console.log('[AgentView] Session path:', path)
+        setSessionPath(path)
+      })
       .catch(() => setSessionPath(null))
   }, [sessionId, currentWorkspaceId])
 
@@ -167,19 +163,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       .catch(() => setWorkspaceFilesPath(null))
   }, [workspaceSlug])
 
-  // 合并工作区文件目录、工作区级附加目录和会话级附加目录，供 @ 引用搜索
-  const allAttachedDirs = React.useMemo(() => {
-    const dirs = [...attachedDirs]
-    // 添加工作区级附加目录
-    for (const d of wsAttachedDirs) {
-      if (!dirs.includes(d)) dirs.push(d)
-    }
-    // 添加工作区共享文件目录
-    if (workspaceFilesPath && !dirs.includes(workspaceFilesPath)) {
-      dirs.unshift(workspaceFilesPath)
-    }
-    return dirs
-  }, [attachedDirs, wsAttachedDirs, workspaceFilesPath])
+
 
   // 监听消息刷新版本号
   const refreshMap = useAtomValue(agentMessageRefreshAtom)
@@ -231,25 +215,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       })
       .catch(console.error)
   }, [sessionId, refreshVersion, setStreamingStates, store])
-
-  // 从会话元数据初始化附加目录
-  const sessions = useAtomValue(agentSessionsAtom)
-  React.useEffect(() => {
-    const meta = sessions.find((s) => s.id === sessionId)
-    const dirs = meta?.attachedDirectories ?? []
-    setAttachedDirsMap((prev) => {
-      const existing = prev.get(sessionId)
-      // 避免不必要的更新
-      if (JSON.stringify(existing) === JSON.stringify(dirs)) return prev
-      const map = new Map(prev)
-      if (dirs.length > 0) {
-        map.set(sessionId, dirs)
-      } else {
-        map.delete(sessionId)
-      }
-      return map
-    })
-  }, [sessionId, sessions, setAttachedDirsMap])
 
   // 自动发送 pending prompt（从设置页"对话完成配置"触发）
   React.useEffect(() => {
@@ -384,30 +349,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       console.error('[AgentView] 文件选择对话框失败:', error)
     }
   }, [setPendingFiles])
-
-  /** 附加文件夹（不复制，仅记录路径） */
-  const handleAttachFolder = React.useCallback(async (): Promise<void> => {
-    try {
-      const result = await window.electronAPI.openFolderDialog()
-      if (!result) return
-
-      const updated = await window.electronAPI.attachDirectory({
-        sessionId,
-        directoryPath: result.path,
-      })
-
-      setAttachedDirsMap((prev) => {
-        const map = new Map(prev)
-        map.set(sessionId, updated)
-        return map
-      })
-
-      toast.success(`已附加目录: ${result.name}`)
-    } catch (error) {
-      console.error('[AgentView] 附加文件夹失败:', error)
-      toast.error('附加文件夹失败')
-    }
-  }, [sessionId, setAttachedDirsMap])
 
   /** 移除待发送文件 */
   const handleRemoveFile = React.useCallback((id: string): void => {
@@ -611,7 +552,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
       channelId: agentChannelId,
       modelId: agentModelId || undefined,
       workspaceId: currentWorkspaceId || undefined,
-      ...(attachedDirs.length > 0 && { additionalDirectories: attachedDirs }),
       // 解析用户消息中的 Skill/MCP 引用，传递结构化元数据给后端
       ...(() => {
         const skills = [...effectiveText.matchAll(/\/skill:(\S+)/g)].map(m => m[1]).filter(Boolean) as string[]
@@ -634,7 +574,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         return map
       })
     })
-  }, [inputContent, pendingFiles, attachedDirs, sessionId, agentChannelId, agentModelId, currentWorkspaceId, workspaces, streaming, suggestion, store, setStreamingStates, setPendingFiles, setAgentStreamErrors, setPromptSuggestions, setInputContent])
+  }, [inputContent, pendingFiles, sessionId, agentChannelId, agentModelId, currentWorkspaceId, workspaces, streaming, suggestion, store, setStreamingStates, setPendingFiles, setAgentStreamErrors, setPromptSuggestions, setInputContent])
 
   /** 停止生成 */
   const handleStop = React.useCallback((): void => {
@@ -800,7 +740,7 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
         {dragFolderWarning && (
           <div className="mx-4 mb-2 px-4 py-2.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400 text-sm flex items-center gap-2">
             <FolderPlus className="size-4 shrink-0" />
-            <span className="flex-1">不支持拖拽文件夹，请使用"附加文件夹"按钮</span>
+            <span className="flex-1">不支持拖拽文件夹，请在右侧「工作区文件」中关联</span>
             <button
               type="button"
               className="shrink-0 p-0.5 rounded hover:bg-amber-500/10 transition-colors"
@@ -897,9 +837,9 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
               disabled={!agentChannelId}
               autoFocusTrigger={sessionId}
               collapsible
-              workspacePath={sessionPath}
+              workspaceId={currentWorkspaceId}
+              sessionId={sessionId}
               workspaceSlug={workspaceSlug}
-              attachedDirs={allAttachedDirs}
             />
 
             {/* Footer 工具栏 */}
@@ -921,22 +861,6 @@ export function AgentView({ sessionId }: { sessionId: string }): React.ReactElem
                       </TooltipTrigger>
                       <TooltipContent side="top">
                         <p>添加附件</p>
-                      </TooltipContent>
-                    </Tooltip>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="size-[30px] rounded-full text-foreground/60 hover:text-foreground"
-                          onClick={handleAttachFolder}
-                        >
-                          <FolderPlus className="size-5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top">
-                        <p>附加文件夹</p>
                       </TooltipContent>
                     </Tooltip>
                     <PermissionModeSelector />

@@ -209,7 +209,9 @@ export function CodeBlock({ children }: CodeBlockProps): React.ReactElement {
         // 初始化完成，用同步路径获取最新结果
         if (!cancelled) doHighlight()
       })
-      .catch((error) => console.error('[CodeBlock] 高亮失败:', error))
+      .catch(() => {
+        // 静默处理错误，降级模式会处理纯文本显示
+      })
 
     return () => { cancelled = true }
   }, [trimmedCode, langOrText])

@@ -184,12 +184,12 @@ interface RichTextInputProps {
   autoFocusTrigger?: string | null
   /** 是否支持手动折叠（内容较长时显示折叠按钮） */
   collapsible?: boolean
-  /** 工作区根路径（启用 @ 引用文件功能时需要） */
-  workspacePath?: string | null
-  /** 工作区 slug（启用 / Skill 和 # MCP 功能时需要） */
+  /** 工作区 ID（启用 @ 引用文件功能时需要） */
+  workspaceId?: string | null
+  /** 会话 ID（启用 @ 引用文件功能时需要） */
+  sessionId?: string | null
+  /** 工作区 slug（启用 / Skill、# MCP 和 @ 引用文件功能时需要） */
   workspaceSlug?: string | null
-  /** 附加目录路径列表（@ 引用时一并搜索） */
-  attachedDirs?: string[]
   className?: string
 }
 
@@ -210,9 +210,9 @@ export function RichTextInput({
   disabled = false,
   autoFocusTrigger,
   collapsible = false,
-  workspacePath,
+  workspaceId,
+  sessionId,
   workspaceSlug,
-  attachedDirs = [],
 }: RichTextInputProps): React.ReactElement {
   const [isExpanded, setIsExpanded] = useState(false)
   // 手动折叠状态：用户主动折叠输入框
@@ -229,22 +229,22 @@ export function RichTextInput({
   onPasteFilesRef.current = onPasteFiles
   // Mention 活跃状态（阻止 Enter 发送消息）
   const mentionActiveRef = useRef(false)
-  // 工作区路径引用（给 Suggestion 使用）
-  const workspacePathRef = useRef<string | null>(workspacePath ?? null)
-  workspacePathRef.current = workspacePath ?? null
-  // 附加目录路径引用（给 Suggestion 使用）
-  const attachedDirsRef = useRef<string[]>(attachedDirs)
-  attachedDirsRef.current = attachedDirs
-  // 工作区 slug 引用（给 Skill/MCP Suggestion 使用）
+  // 工作区 ID 引用（给文件 Mention Suggestion 使用）
+  const workspaceIdRef = useRef<string | null>(workspaceId ?? null)
+  workspaceIdRef.current = workspaceId ?? null
+  // 会话 ID 引用（给文件 Mention Suggestion 使用）
+  const sessionIdRef = useRef<string | null>(sessionId ?? null)
+  sessionIdRef.current = sessionId ?? null
+  // 工作区 slug 引用（给 Skill/MCP/文件 Mention Suggestion 使用）
   const workspaceSlugRef = useRef<string | null>(workspaceSlug ?? null)
   workspaceSlugRef.current = workspaceSlug ?? null
 
-  // 是否启用 Mention 功能（需要工作区路径或 slug）
-  const hasMentionSupport = !!(workspacePath || workspaceSlug)
+  // 是否启用 Mention 功能（需要工作区信息）
+  const hasMentionSupport = !!(workspaceId && sessionId) || !!workspaceSlug
 
-  // Mention Suggestion 配置（稳定引用，不随 workspacePath 变化重建）
+  // Mention Suggestion 配置（稳定引用）
   const mentionSuggestion = useMemo(
-    () => createFileMentionSuggestion(workspacePathRef, mentionActiveRef, attachedDirsRef),
+    () => createFileMentionSuggestion(workspaceIdRef, sessionIdRef, workspaceSlugRef, mentionActiveRef),
     [],
   )
 

@@ -38,6 +38,7 @@ import {
   workspaceCapabilitiesVersionAtom,
   agentSidePanelOpenMapAtom,
   agentSidePanelTabMapAtom,
+  agentSessionDropZoneDismissedAtom,
 } from '@/atoms/agent-atoms'
 import {
   tabsAtom,
@@ -191,6 +192,7 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const setConvPromptId = useSetAtom(conversationPromptIdAtom)
   const setAgentSidePanelOpen = useSetAtom(agentSidePanelOpenMapAtom)
   const setAgentSidePanelTab = useSetAtom(agentSidePanelTabMapAtom)
+  const setAgentSessionDropZoneDismissed = useSetAtom(agentSessionDropZoneDismissedAtom)
 
   /** 清理 per-conversation/session Map atoms 条目 */
   const cleanupMapAtoms = React.useCallback((id: string) => {
@@ -207,7 +209,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     setConvPromptId(deleteKey)
     setAgentSidePanelOpen(deleteKey)
     setAgentSidePanelTab(deleteKey)
-  }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setAgentSidePanelOpen, setAgentSidePanelTab])
+    setAgentSessionDropZoneDismissed(deleteKey)
+  }, [setConvModels, setConvContextLength, setConvThinking, setConvParallel, setConvPromptId, setAgentSidePanelOpen, setAgentSidePanelTab, setAgentSessionDropZoneDismissed])
 
   const currentWorkspaceSlug = React.useMemo(() => {
     if (!currentWorkspaceId) return null
@@ -520,12 +523,25 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     />
   )
 
-  // ===== 折叠状态：精简图标视图 =====
-  if (sidebarCollapsed) {
-    return (
+  // ===== 侧边栏：折叠/展开两种状态切换，展开时无固定留白栏 =====
+  return (
+    <div
+      className={cn(
+        "h-full flex flex-col bg-background overflow-hidden relative",
+        sidebarCollapsed ? "w-12" : "w-[280px]"
+      )}
+      style={{
+        transition: 'width 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+        willChange: 'width',
+        contain: 'layout paint',
+      }}
+    >
+      {/* 折叠状态：仅显示 48px 图标栏 */}
       <div
-        className="h-full flex flex-col items-center bg-background transition-[width] duration-300"
-        style={{ width: 48, flexShrink: 0 }}
+        className={cn(
+          'absolute inset-0 flex flex-col items-center bg-background z-20 transition-opacity duration-200',
+          sidebarCollapsed ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        )}
       >
         {/* 顶部留空，避开 macOS 红绿灯 */}
         <div className="pt-[50px]" />
@@ -587,245 +603,252 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
             <TooltipContent side="right">设置</TooltipContent>
           </Tooltip>
         </div>
-
-        {deleteDialog}
-        {moveDialog}
-      </div>
-    )
-  }
-
-  // ===== 展开状态：完整侧边栏 =====
-  return (
-    <div
-      className="h-full flex flex-col bg-background transition-[width] duration-300"
-      style={{ width: width ?? 280, minWidth: 180, flexShrink: 1 }}
-    >
-      {/* 顶部留空，避开 macOS 红绿灯 */}
-      <div className="pt-[50px]">
-        {/* 模式切换器 + 折叠按钮 */}
-        <div className="flex items-start gap-1 pr-1">
-          <div className="flex-1 min-w-0">
-            <ModeSwitcher />
-          </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => setSidebarCollapsed(true)}
-                className="mt-2 size-10 flex items-center justify-center rounded-[10px] text-foreground/40 hover:bg-foreground/[0.04] hover:text-foreground/60 transition-colors titlebar-no-drag"
-              >
-                <PanelLeftClose size={18} />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">收起侧边栏</TooltipContent>
-          </Tooltip>
-        </div>
       </div>
 
-      {/* Agent 模式：工作区选择器 */}
-      {mode === 'agent' && (
-        <div className="px-3 pt-3">
-          <WorkspaceSelector />
-        </div>
-      )}
-
-      {/* 新对话/新会话按钮 */}
-      <div className="px-3 pt-2">
-        <button
-          onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
-          className="w-full flex items-center gap-2 px-3 py-2 rounded-[10px] text-[13px] font-medium text-foreground/70 bg-foreground/[0.04] hover:bg-foreground/[0.08] transition-colors duration-100 titlebar-no-drag border border-dashed border-foreground/10 hover:border-foreground/20"
-        >
-          <Plus size={14} />
-          <span>{mode === 'agent' ? '新会话' : '新对话'}</span>
-        </button>
-      </div>
-
-      {/* Chat 模式：导航菜单（置顶区域） */}
-      {mode === 'chat' && (
-        <div className="flex flex-col gap-1 pt-3 px-3">
-          <SidebarItem
-            icon={<Pin size={16} />}
-            label="置顶对话"
-            suffix={
-              pinnedConversations.length > 0 ? (
-                pinnedExpanded
-                  ? <ChevronDown size={14} className="text-foreground/40" />
-                  : <ChevronRight size={14} className="text-foreground/40" />
-              ) : undefined
-            }
-            onClick={() => handleItemClick('pinned')}
-          />
-        </div>
-      )}
-
-      {/* Chat 模式：置顶对话区域 */}
-      {mode === 'chat' && pinnedExpanded && pinnedConversations.length > 0 && (
-        <div className="px-3 pt-1 pb-1">
-          <div className="flex flex-col gap-0.5 pl-1 border-l-2 border-primary/20 ml-2">
-            {pinnedConversations.map((conv) => (
-              <ConversationItem
-                key={`pinned-${conv.id}`}
-                conversation={conv}
-                active={conv.id === activeTabId}
-                hovered={conv.id === hoveredId}
-                streaming={streamingIds.has(conv.id)}
-                showPinIcon={false}
-                onSelect={() => handleSelectConversation(conv.id, conv.title)}
-                onRequestDelete={() => handleRequestDelete(conv.id)}
-                onRename={handleRename}
-                onTogglePin={handleTogglePin}
-                onMouseEnter={() => setHoveredId(conv.id)}
-                onMouseLeave={() => setHoveredId(null)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Agent 模式：导航菜单（置顶区域） */}
-      {mode === 'agent' && (
-        <div className="flex flex-col gap-1 pt-3 px-3">
-          <SidebarItem
-            icon={<Pin size={16} />}
-            label="置顶会话"
-            suffix={
-              pinnedAgentSessions.length > 0 ? (
-                pinnedAgentExpanded
-                  ? <ChevronDown size={14} className="text-foreground/40" />
-                  : <ChevronRight size={14} className="text-foreground/40" />
-              ) : undefined
-            }
-            onClick={() => setPinnedAgentExpanded((prev) => !prev)}
-          />
-        </div>
-      )}
-
-      {/* Agent 模式：置顶会话区域 */}
-      {mode === 'agent' && pinnedAgentExpanded && pinnedAgentSessions.length > 0 && (
-        <div className="px-3 pt-1 pb-1">
-          <div className="flex flex-col gap-0.5 pl-1 border-l-2 border-primary/20 ml-2">
-            {pinnedAgentSessions.map((session) => (
-              <AgentSessionItem
-                key={`pinned-${session.id}`}
-                session={session}
-                active={session.id === activeTabId}
-                hovered={session.id === hoveredId}
-                running={agentRunningIds.has(session.id)}
-                showPinIcon={false}
-                onSelect={() => handleSelectAgentSession(session.id, session.title)}
-                onRequestDelete={() => handleRequestDelete(session.id)}
-                onRequestMove={() => setMoveTargetId(session.id)}
-                onRename={handleAgentRename}
-                onTogglePin={handleTogglePinAgent}
-                onMouseEnter={() => setHoveredId(session.id)}
-                onMouseLeave={() => setHoveredId(null)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 列表区域：根据模式切换 */}
-      <div className="flex-1 overflow-y-auto px-3 pt-2 pb-3 scrollbar-none">
-        {mode === 'chat' ? (
-          /* Chat 模式：对话按日期分组 */
-          conversationGroups.map((group) => (
-            <div key={group.label} className="mb-1">
-              <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
-                {group.label}
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {group.items.map((conv) => (
-                  <ConversationItem
-                    key={conv.id}
-                    conversation={conv}
-                    active={conv.id === activeTabId}
-                    hovered={conv.id === hoveredId}
-                    streaming={streamingIds.has(conv.id)}
-                    showPinIcon={!!conv.pinned}
-                    onSelect={() => handleSelectConversation(conv.id, conv.title)}
-                    onRequestDelete={() => handleRequestDelete(conv.id)}
-                    onRename={handleRename}
-                    onTogglePin={handleTogglePin}
-                    onMouseEnter={() => setHoveredId(conv.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
-        ) : (
-          /* Agent 模式：Agent 会话按日期分组 */
-          agentSessionGroups.map((group) => (
-            <div key={group.label} className="mb-1">
-              <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
-                {group.label}
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {group.items.map((session) => (
-                  <AgentSessionItem
-                    key={session.id}
-                    session={session}
-                    active={session.id === activeTabId}
-                    hovered={session.id === hoveredId}
-                    running={agentRunningIds.has(session.id)}
-                    showPinIcon={!!session.pinned}
-                    onSelect={() => handleSelectAgentSession(session.id, session.title)}
-                    onRequestDelete={() => handleRequestDelete(session.id)}
-                    onRequestMove={() => setMoveTargetId(session.id)}
-                    onRename={handleAgentRename}
-                    onTogglePin={handleTogglePinAgent}
-                    onMouseEnter={() => setHoveredId(session.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                  />
-                ))}
-              </div>
-            </div>
-          ))
+      {/* 展开状态：完整 280px 侧边栏，从左侧滑入 */}
+      <div
+        className={cn(
+          'absolute inset-0 w-[280px] bg-background flex flex-col',
+          sidebarCollapsed ? 'pointer-events-none' : 'pointer-events-auto'
         )}
-      </div>
-
-      {/* Agent 模式：工作区能力指示器 */}
-      {mode === 'agent' && capabilities && (
-        <div className="px-3 pb-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                onClick={() => { setSettingsTab('agent'); handleItemClick('settings') }}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground/70 transition-colors titlebar-no-drag"
-              >
-                <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                  <span className="flex items-center gap-1">
-                    <Plug size={13} className="text-foreground/40" />
-                    <span className="tabular-nums">{capabilities.mcpServers.filter((s) => s.enabled).length}</span>
-                    <span className="text-foreground/30">MCP</span>
-                  </span>
-                  <span className="text-foreground/20">·</span>
-                  <span className="flex items-center gap-1">
-                    <Zap size={13} className="text-foreground/40" />
-                    <span className="tabular-nums">{capabilities.skills.length}</span>
-                    <span className="text-foreground/30">Skills</span>
-                  </span>
-                </div>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="right">点击配置 MCP 与 Skills</TooltipContent>
-          </Tooltip>
+        style={{
+          transform: sidebarCollapsed ? 'translateX(-100%)' : 'translateX(0)',
+          transition: 'transform 300ms cubic-bezier(0.4, 0, 0.2, 1)',
+          willChange: 'transform',
+          contain: 'layout paint',
+        }}
+      >
+        {/* 内容区域 */}
+        <div className="h-full flex flex-col">
+            {/* 顶部留空，避开 macOS 红绿灯 */}
+            <div className="pt-[50px]">
+              {/* 模式切换器 + 折叠按钮 */}
+              <div className="flex items-start gap-1 pr-1">
+            <div className="flex-1 min-w-0">
+              <ModeSwitcher />
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => setSidebarCollapsed(true)}
+                  className="mt-2 size-10 flex items-center justify-center rounded-[10px] text-foreground/40 hover:bg-foreground/[0.04] hover:text-foreground/60 transition-colors titlebar-no-drag"
+                >
+                  <PanelLeftClose size={18} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">收起侧边栏</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-      )}
-
-      {/* 底部设置 */}
-      <div className="px-3 pb-3">
-        <SidebarItem
-          icon={<Settings size={18} />}
-          label="设置"
-          active={activeItem === 'settings'}
-          onClick={() => handleItemClick('settings')}
-          suffix={
-            (hasUpdate || hasEnvironmentIssues) ? (
-              <span className="w-2 h-2 rounded-full bg-red-500" />
-            ) : undefined
-          }
-        />
+  
+        {/* Agent 模式：工作区选择器 */}
+        {mode === 'agent' && (
+          <div className="px-3 pt-3">
+            <WorkspaceSelector />
+          </div>
+        )}
+  
+        {/* 新对话/新会话按钮 */}
+        <div className="px-3 pt-2">
+          <button
+            onClick={mode === 'agent' ? handleNewAgentSession : handleNewConversation}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-[10px] text-[13px] font-medium text-foreground/70 bg-foreground/[0.04] hover:bg-foreground/[0.08] transition-colors duration-100 titlebar-no-drag border border-dashed border-foreground/10 hover:border-foreground/20"
+          >
+            <Plus size={14} />
+            <span>{mode === 'agent' ? '新会话' : '新对话'}</span>
+          </button>
+        </div>
+  
+        {/* Chat 模式：导航菜单（置顶区域） */}
+        {mode === 'chat' && (
+          <div className="flex flex-col gap-1 pt-3 px-3">
+            <SidebarItem
+              icon={<Pin size={16} />}
+              label="置顶对话"
+              suffix={
+                pinnedConversations.length > 0 ? (
+                  pinnedExpanded
+                    ? <ChevronDown size={14} className="text-foreground/40" />
+                    : <ChevronRight size={14} className="text-foreground/40" />
+                ) : undefined
+              }
+              onClick={() => handleItemClick('pinned')}
+            />
+          </div>
+        )}
+  
+        {/* Chat 模式：置顶对话区域 */}
+        {mode === 'chat' && pinnedExpanded && pinnedConversations.length > 0 && (
+          <div className="px-3 pt-1 pb-1">
+            <div className="flex flex-col gap-0.5 pl-1 border-l-2 border-primary/20 ml-2">
+              {pinnedConversations.map((conv) => (
+                <ConversationItem
+                  key={`pinned-${conv.id}`}
+                  conversation={conv}
+                  active={conv.id === activeTabId}
+                  hovered={conv.id === hoveredId}
+                  streaming={streamingIds.has(conv.id)}
+                  showPinIcon={false}
+                  onSelect={() => handleSelectConversation(conv.id, conv.title)}
+                  onRequestDelete={() => handleRequestDelete(conv.id)}
+                  onRename={handleRename}
+                  onTogglePin={handleTogglePin}
+                  onMouseEnter={() => setHoveredId(conv.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+  
+        {/* Agent 模式：导航菜单（置顶区域） */}
+        {mode === 'agent' && (
+          <div className="flex flex-col gap-1 pt-3 px-3">
+            <SidebarItem
+              icon={<Pin size={16} />}
+              label="置顶会话"
+              suffix={
+                pinnedAgentSessions.length > 0 ? (
+                  pinnedAgentExpanded
+                    ? <ChevronDown size={14} className="text-foreground/40" />
+                    : <ChevronRight size={14} className="text-foreground/40" />
+                ) : undefined
+              }
+              onClick={() => setPinnedAgentExpanded((prev) => !prev)}
+            />
+          </div>
+        )}
+  
+        {/* Agent 模式：置顶会话区域 */}
+        {mode === 'agent' && pinnedAgentExpanded && pinnedAgentSessions.length > 0 && (
+          <div className="px-3 pt-1 pb-1">
+            <div className="flex flex-col gap-0.5 pl-1 border-l-2 border-primary/20 ml-2">
+              {pinnedAgentSessions.map((session) => (
+                <AgentSessionItem
+                  key={`pinned-${session.id}`}
+                  session={session}
+                  active={session.id === activeTabId}
+                  hovered={session.id === hoveredId}
+                  running={agentRunningIds.has(session.id)}
+                  showPinIcon={false}
+                  onSelect={() => handleSelectAgentSession(session.id, session.title)}
+                  onRequestDelete={() => handleRequestDelete(session.id)}
+                  onRequestMove={() => setMoveTargetId(session.id)}
+                  onRename={handleAgentRename}
+                  onTogglePin={handleTogglePinAgent}
+                  onMouseEnter={() => setHoveredId(session.id)}
+                  onMouseLeave={() => setHoveredId(null)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+  
+        {/* 列表区域：根据模式切换 */}
+        <div className="flex-1 overflow-y-auto px-3 pt-2 pb-3 scrollbar-none">
+          {mode === 'chat' ? (
+            /* Chat 模式：对话按日期分组 */
+            conversationGroups.map((group) => (
+              <div key={group.label} className="mb-1">
+                <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
+                  {group.label}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map((conv) => (
+                    <ConversationItem
+                      key={conv.id}
+                      conversation={conv}
+                      active={conv.id === activeTabId}
+                      hovered={conv.id === hoveredId}
+                      streaming={streamingIds.has(conv.id)}
+                      showPinIcon={!!conv.pinned}
+                      onSelect={() => handleSelectConversation(conv.id, conv.title)}
+                      onRequestDelete={() => handleRequestDelete(conv.id)}
+                      onRename={handleRename}
+                      onTogglePin={handleTogglePin}
+                      onMouseEnter={() => setHoveredId(conv.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          ) : (
+            /* Agent 模式：Agent 会话按日期分组 */
+            agentSessionGroups.map((group) => (
+              <div key={group.label} className="mb-1">
+                <div className="px-3 pt-2 pb-1 text-[11px] font-medium text-foreground/40 select-none">
+                  {group.label}
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  {group.items.map((session) => (
+                    <AgentSessionItem
+                      key={session.id}
+                      session={session}
+                      active={session.id === activeTabId}
+                      hovered={session.id === hoveredId}
+                      running={agentRunningIds.has(session.id)}
+                      showPinIcon={!!session.pinned}
+                      onSelect={() => handleSelectAgentSession(session.id, session.title)}
+                      onRequestDelete={() => handleRequestDelete(session.id)}
+                      onRequestMove={() => setMoveTargetId(session.id)}
+                      onRename={handleAgentRename}
+                      onTogglePin={handleTogglePinAgent}
+                      onMouseEnter={() => setHoveredId(session.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+  
+        {/* Agent 模式：工作区能力指示器 */}
+        {mode === 'agent' && capabilities && (
+          <div className="px-3 pb-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => { setSettingsTab('agent'); handleItemClick('settings') }}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-[10px] text-[12px] text-foreground/50 hover:bg-foreground/[0.04] hover:text-foreground/70 transition-colors titlebar-no-drag"
+                >
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    <span className="flex items-center gap-1">
+                      <Plug size={13} className="text-foreground/40" />
+                      <span className="tabular-nums">{capabilities.mcpServers.filter((s) => s.enabled).length}</span>
+                      <span className="text-foreground/30">MCP</span>
+                    </span>
+                    <span className="text-foreground/20">·</span>
+                    <span className="flex items-center gap-1">
+                      <Zap size={13} className="text-foreground/40" />
+                      <span className="tabular-nums">{capabilities.skills.length}</span>
+                      <span className="text-foreground/30">Skills</span>
+                    </span>
+                  </div>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right">点击配置 MCP 与 Skills</TooltipContent>
+            </Tooltip>
+          </div>
+        )}
+  
+        {/* 底部设置 */}
+        <div className="px-3 pb-3">
+          <SidebarItem
+            icon={<Settings size={18} />}
+            label="设置"
+            active={activeItem === 'settings'}
+            onClick={() => handleItemClick('settings')}
+            suffix={
+              (hasUpdate || hasEnvironmentIssues) ? (
+                <span className="w-2 h-2 rounded-full bg-red-500" />
+              ) : undefined
+            }
+          />
+        </div>
+  
+        </div>
       </div>
 
       {deleteDialog}

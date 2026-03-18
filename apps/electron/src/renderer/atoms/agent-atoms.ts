@@ -563,6 +563,13 @@ export const agentSidePanelOpenMapAtom = atom<Map<string, boolean>>(new Map())
 /** 侧面板当前活跃 Tab（per-session Map） */
 export const agentSidePanelTabMapAtom = atom<Map<string, SidePanelTab>>(new Map())
 
+/** 本会话文件拖拽区域是否已收起（per-session Map）
+ * 
+ * 用于控制本会话文件区域的 FileDropZone 显示。
+ * 与 workspaceFilesVersionAtom 独立，避免工作区文件变化影响本会话文件的上传提示。
+ */
+export const agentSessionDropZoneDismissedAtom = atom<Map<string, boolean>>(new Map())
+
 /**
  * Team 活动缓存 — 以 sessionId 为 key
  *
@@ -1165,14 +1172,7 @@ export const currentAgentErrorAtom = atom<string | null>((get) => {
 export const agentSessionDraftsAtom = atom<Map<string, string>>(new Map())
 
 /**
- * 会话附加目录 Map — 以 sessionId 为 key
- * 存储每个会话通过"附加文件夹"功能关联的外部目录路径列表。
- * 这些路径作为 SDK additionalDirectories 参数传递。
- */
-export const agentAttachedDirectoriesMapAtom = atom<Map<string, string[]>>(new Map())
-
-/**
- * 工作区级附加目录列表（按 workspaceId 存储）
+ * 工作区级关联目录列表（按 workspaceId 存储）
  *
  * 工作区内所有会话共享这些附加目录。
  */

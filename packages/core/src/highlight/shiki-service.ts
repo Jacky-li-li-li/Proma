@@ -94,9 +94,43 @@ let highlighterPromise: Promise<ShikiHighlighter> | null = null
 /** 已 resolve 的高亮器实例缓存（同步访问用） */
 let cachedHighlighter: ShikiHighlighter | null = null
 
+/** Shiki 是否初始化失败（CSP 等原因） */
+let shikiInitFailed = false
+
+/**
+ * 创建降级高亮器（纯文本，无高亮）
+ * 当 Shiki 初始化失败时使用
+ */
+function createFallbackHighlighter(): ShikiHighlighter {
+  const fallback = {
+    codeToHtml: (code: string) => `<pre style="margin:0;padding:16px;font-family:monospace;white-space:pre-wrap;word-break:break-word;">${escapeHtml(code)}</pre>`,
+    codeToTokens: (code: string) => ({
+      tokens: code.split('\n').map(line => [{ content: line, color: '#e5e5e5' }]),
+      bgColor: '#1e1e1e',
+      fgColor: '#e5e5e5',
+    }),
+    getLoadedLanguages: () => ['text'],
+    getLoadedThemes: () => ['github-dark'],
+    loadLanguage: async () => {},
+    loadTheme: async () => {},
+  } as unknown as ShikiHighlighter
+  return fallback
+}
+
+/** HTML 转义 */
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
 /**
  * 获取或创建 Shiki 高亮器单例
  * 首次调用时懒加载，resolve 后缓存实例供同步使用
+ * CSP 限制时自动降级到纯文本模式
  */
 function getHighlighter(): Promise<ShikiHighlighter> {
   if (!highlighterPromise) {
@@ -106,6 +140,13 @@ function getHighlighter(): Promise<ShikiHighlighter> {
     }).then((hl) => {
       cachedHighlighter = hl
       return hl
+    }).catch(() => {
+      // CSP 限制或其他错误，静默使用降级模式
+      // 这是预期行为，不需要警告用户
+      shikiInitFailed = true
+      const fallback = createFallbackHighlighter()
+      cachedHighlighter = fallback
+      return fallback
     })
   }
   return highlighterPromise
