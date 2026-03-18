@@ -23,6 +23,9 @@
     --card-foreground: 0 0% 3.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 0 0% 3.9%;
+    /* 消息卡片颜色 CSS 变量（由用户自定义） */
+    --user-message-bg: '';
+    --assistant-message-bg: '';
   }
 
   .dark {
@@ -191,3 +194,36 @@
 .spinner-cube:nth-child(7) { animation-delay: 0s; }
 .spinner-cube:nth-child(8) { animation-delay: 0.1s; }
 .spinner-cube:nth-child(9) { animation-delay: 0.2s; }
+
+/* ===== 消息气泡自定义颜色 ===== */
+
+/* 用户消息气泡：优先使用自定义颜色，否则使用默认半透明背景 */
+.user-message-bubble {
+  background-color: var(--user-message-bg, hsl(var(--foreground) / 0.045));
+}
+
+.dark .user-message-bubble {
+  background-color: var(--user-message-bg, hsl(var(--foreground) / 0.08));
+}
+
+/* AI 消息气泡：优先使用自定义颜色，否则使用透明背景 */
+.assistant-message-bubble {
+  background-color: var(--assistant-message-bg, transparent);
+}
+
+/* 确保渐变遮罩与自定义颜色协调 */
+.user-message-bubble .collapse-gradient {
+  background: linear-gradient(
+    to top,
+    var(--user-message-bg, hsl(var(--foreground) / 0.045)) 0%,
+    transparent 100%
+  );
+}
+
+.dark .user-message-bubble .collapse-gradient {
+  background: linear-gradient(
+    to top,
+    var(--user-message-bg, hsl(var(--foreground) / 0.08)) 0%,
+    transparent 100%
+  );
+}

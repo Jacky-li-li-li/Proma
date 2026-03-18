@@ -18,6 +18,20 @@ export const DEFAULT_THEME_MODE: ThemeMode = 'dark'
 /** 默认消息布局模式 */
 export const DEFAULT_CHAT_MESSAGE_LAYOUT: ChatMessageLayout = 'left-aligned'
 
+/** 消息气泡颜色配置 */
+export interface MessageBubbleColors {
+  /** 用户消息气泡背景色 */
+  userMessageColor: string
+  /** AI 消息气泡背景色 */
+  assistantMessageColor: string
+}
+
+/** 默认消息气泡颜色配置（空字符串表示使用默认样式） */
+export const DEFAULT_MESSAGE_BUBBLE_COLORS: MessageBubbleColors = {
+  userMessageColor: '',
+  assistantMessageColor: '',
+}
+
 /** 应用设置 */
 export interface AppSettings {
   /** 主题模式 */
@@ -52,6 +66,8 @@ export interface AppSettings {
   tutorialBannerDismissed?: boolean
   /** 消息布局模式 */
   chatMessageLayout?: ChatMessageLayout
+  /** 消息气泡颜色配置 */
+  messageBubbleColors?: MessageBubbleColors
 }
 
 /** 持久化的标签页状态 */

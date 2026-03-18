@@ -162,7 +162,8 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
 
         <MessageContent className={`${layout.contentPaddingClass} ${layout.contentItemsClass}`}>
           {message.role === 'assistant' ? (
-            <>
+            /* AI 消息 - 使用气泡容器包装内容 */
+            <div className="assistant-message-bubble rounded-[10px] px-3.5 py-2.5 w-fit">
               {/* 工具活动记录（历史消息） */}
               {message.toolActivities && message.toolActivities.length > 0 && (
                 <ChatToolActivityIndicator activities={message.toolActivities} />
@@ -196,7 +197,7 @@ export const ChatMessageItem = React.memo(function ChatMessageItem({
               {message.attachments && message.attachments.length > 0 && (
                 <MessageAttachments attachments={message.attachments} />
               )}
-            </>
+            </div>
           ) : (
             /* 用户消息 - 附件 + 可折叠文本 / 原地编辑 */
             <>

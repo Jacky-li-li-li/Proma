@@ -331,8 +331,10 @@ export const MessageResponse = React.memo(
 /** 折叠行数阈值 */
 const COLLAPSE_LINE_THRESHOLD = 4
 
-/** 将文本中的 @file:路径、/skill:名称、#mcp:名称 替换为样式化 chip */
-const MENTION_RE = /@file:(\S+)|\/skill:(\S+)|#mcp:(\S+)/g
+/** 将文本中的 @file:路径、/skill:名称、#mcp:名称 替换为样式化 chip
+ * 注意：文件路径可能包含空格，使用非贪婪匹配直到遇到下一个 mention 或行尾
+ */
+const MENTION_RE = /@file:([\s\S]*?)(?=\s@file:|\s\/skill:|\s#mcp:|$)|\/skill:(\S+)|#mcp:(\S+)/g
 
 function renderTextWithMentions(text: string): React.ReactNode {
   const parts: React.ReactNode[] = []
@@ -352,7 +354,7 @@ function renderTextWithMentions(text: string): React.ReactNode {
 
     if (match[1]) {
       // @file: 文件引用 — 蓝色 chip
-      const filePath = match[1]
+      const filePath = match[1].trim()
       const fileName = filePath.split('/').pop() || filePath
       parts.push(
         <span key={key} className="inline-flex items-center gap-0.5 bg-primary/10 text-primary rounded px-1 py-[1px] text-[13px] font-medium whitespace-nowrap align-baseline" title={filePath}>
@@ -425,7 +427,15 @@ export const UserMessageContent = React.memo(
     const isRightAligned = className?.includes('text-right')
 
     return (
-      <div className={cn('relative rounded-[10px] bg-foreground/[0.045] dark:bg-foreground/[0.08] px-3.5 py-2.5 w-fit', shouldCollapse && !isExpanded && 'pb-6', isRightAligned && 'ml-auto', className)} {...props}>
+      <div
+        className={cn(
+          'user-message-bubble relative rounded-[10px] px-3.5 py-2.5 w-fit',
+          shouldCollapse && !isExpanded && 'pb-6',
+          isRightAligned && 'ml-auto',
+          className
+        )}
+        {...props}
+      >
         <div
           ref={contentRef}
           className={cn(
@@ -443,7 +453,7 @@ export const UserMessageContent = React.memo(
             className={cn(
               'flex items-center gap-1 text-xs text-foreground/40 hover:text-foreground/70 transition-colors mt-1',
               !isExpanded &&
-                'absolute bottom-0 left-0 right-0 px-3.5 pb-2.5 pt-4 rounded-b-[10px] bg-gradient-to-t from-foreground/[0.045] dark:from-foreground/[0.08] to-transparent'
+                'collapse-gradient absolute bottom-0 left-0 right-0 px-3.5 pb-2.5 pt-4 rounded-b-[10px]'
             )}
           >
             {isExpanded ? (

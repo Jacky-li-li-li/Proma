@@ -493,15 +493,17 @@ function AgentMessageItem({ message, sessionPath, onRetry, onRetryInNewSession, 
           logo={<AssistantLogo model={message.model} />}
         />
         <MessageContent>
-          {toolActivities.length > 0 && (
-            <div className="mb-3">
-              <ToolActivityList activities={toolActivities} />
-            </div>
-          )}
-          <ToolResultInlineImages activities={toolActivities} />
-          {message.content && (
-            <MessageResponse basePath={sessionPath || undefined}>{message.content}</MessageResponse>
-          )}
+          <div className="assistant-message-bubble rounded-[10px] px-3.5 py-2.5 w-fit">
+            {toolActivities.length > 0 && (
+              <div className="mb-3">
+                <ToolActivityList activities={toolActivities} />
+              </div>
+            )}
+            <ToolResultInlineImages activities={toolActivities} />
+            {message.content && (
+              <MessageResponse basePath={sessionPath || undefined}>{message.content}</MessageResponse>
+            )}
+          </div>
         </MessageContent>
         {/* 操作按钮（hover 时可见） */}
         {message.content && (
@@ -527,8 +529,10 @@ function AgentMessageItem({ message, sessionPath, onRetry, onRetryInNewSession, 
           }
         />
         <MessageContent>
-          <div className="text-destructive">
-            <MessageResponse>{message.content}</MessageResponse>
+          <div className="assistant-message-bubble rounded-[10px] px-3.5 py-2.5 w-fit">
+            <div className="text-destructive">
+              <MessageResponse>{message.content}</MessageResponse>
+            </div>
           </div>
           {/* 错误操作按钮 */}
           <div className="flex items-center gap-2 mt-3">
@@ -649,23 +653,26 @@ export function AgentMessages({ sessionId, messages, streaming, streamState, ses
                   logo={<AssistantLogo model={agentStreamingModel} />}
                 />
                 <MessageContent>
-                  {retrying && <RetryingNotice retrying={retrying} />}
-                  {toolActivities.length > 0 && (
-                    <div className="mb-3">
-                      <ToolActivityList activities={toolActivities} animate />
-                      {/* 后台任务面板 — 显示在工具活动下方 */}
-                      <BackgroundTasksPanel tasks={backgroundTasks} />
+                  {(retrying || toolActivities.length > 0 || smoothContent) && (
+                    <div className="assistant-message-bubble rounded-[10px] px-3.5 py-2.5 w-fit">
+                      {retrying && <RetryingNotice retrying={retrying} />}
+                      {toolActivities.length > 0 && (
+                        <div className="mb-3">
+                          <ToolActivityList activities={toolActivities} animate />
+                          {/* 后台任务面板 — 显示在工具活动下方 */}
+                          <BackgroundTasksPanel tasks={backgroundTasks} />
+                        </div>
+                      )}
+                      <ToolResultInlineImages activities={toolActivities} />
+                      {smoothContent ? (
+                        <>
+                          <MessageResponse basePath={sessionPath || undefined}>{smoothContent}</MessageResponse>
+                          {streaming && <StreamingIndicator />}
+                        </>
+                      ) : null}
                     </div>
                   )}
-                  <ToolResultInlineImages activities={toolActivities} />
-                  {smoothContent ? (
-                    <>
-                      <MessageResponse basePath={sessionPath || undefined}>{smoothContent}</MessageResponse>
-                      {streaming && <StreamingIndicator />}
-                    </>
-                  ) : (
-                    streaming && toolActivities.length === 0 && !retrying && <MessageLoading startedAt={startedAt} />
-                  )}
+                  {streaming && toolActivities.length === 0 && !retrying && !smoothContent && <MessageLoading startedAt={startedAt} />}
                 </MessageContent>
               </Message>
             )}

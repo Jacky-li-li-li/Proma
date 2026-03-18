@@ -38,6 +38,10 @@ import {
   chatMessageLayoutAtom,
   initializeChatMessageLayout,
 } from './atoms/chat-message-layout'
+import {
+  messageBubbleColorsAtom,
+  initializeMessageBubbleColors,
+} from './atoms/message-bubble-colors'
 import { useGlobalAgentListeners } from './hooks/useGlobalAgentListeners'
 import { useGlobalChatListeners } from './hooks/useGlobalChatListeners'
 import { tabsAtom, splitLayoutAtom } from './atoms/tab-atoms'
@@ -260,6 +264,21 @@ function ChatMessageLayoutInitializer(): null {
 }
 
 /**
+ * 消息气泡颜色初始化组件
+ *
+ * 从主进程加载消息气泡颜色设置并应用到 DOM。
+ */
+function MessageBubbleColorsInitializer(): null {
+  const setColors = useSetAtom(messageBubbleColorsAtom)
+
+  useEffect(() => {
+    void initializeMessageBubbleColors(setColors)
+  }, [setColors])
+
+  return null
+}
+
+/**
  * Chat IPC 监听器初始化组件
  *
  * 全局挂载，永不销毁。确保 Chat 流式事件
@@ -377,6 +396,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <AgentSettingsInitializer />
     <NotificationsInitializer />
     <ChatMessageLayoutInitializer />
+    <MessageBubbleColorsInitializer />
     <ChatListenersInitializer />
     <AgentListenersInitializer />
     <ChatToolInitializer />
