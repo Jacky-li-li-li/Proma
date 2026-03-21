@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { ModeSwitcher } from './ModeSwitcher'
 import { activeViewAtom } from '@/atoms/active-view'
-import { appModeAtom } from '@/atoms/app-mode'
+import { appModeAtom, lastActiveChatTabIdAtom, lastActiveAgentTabIdAtom } from '@/atoms/app-mode'
 import { settingsTabAtom } from '@/atoms/settings-tab'
 import {
   conversationsAtom,
@@ -161,6 +161,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
   const selectedModel = useAtomValue(selectedModelAtom)
   const streamingIds = useAtomValue(streamingConversationIdsAtom)
   const mode = useAtomValue(appModeAtom)
+  const setLastChatTab = useSetAtom(lastActiveChatTabIdAtom)
+  const setLastAgentTab = useSetAtom(lastActiveAgentTabIdAtom)
   const hasUpdate = useAtomValue(hasUpdateAtom)
   const hasEnvironmentIssues = useAtomValue(hasEnvironmentIssuesAtom)
   const promptConfig = useAtomValue(promptConfigAtom)
@@ -297,6 +299,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       setTabs(result.tabs)
       setLayout(result.layout)
       setCurrentConversationId(meta.id)
+      // 追踪最近活跃的 Chat Tab
+      setLastChatTab(meta.id)
       // 确保在对话视图
       setActiveView('conversations')
       setActiveItem('all-chats')
@@ -317,6 +321,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     setCurrentConversationId(id)
     setActiveView('conversations')
     setActiveItem('all-chats')
+    // 追踪最近活跃的 Chat Tab
+    setLastChatTab(id)
   }
 
   /** 请求删除对话（弹出确认框） */
@@ -407,6 +413,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
       setCurrentAgentSessionId(meta.id)
       setActiveView('conversations')
       setActiveItem('all-chats')
+      // 追踪最近活跃的 Agent Tab
+      setLastAgentTab(meta.id)
     } catch (error) {
       console.error('[侧边栏] 创建 Agent 会话失败:', error)
     }
@@ -420,6 +428,8 @@ export function LeftSidebar({ width }: LeftSidebarProps): React.ReactElement {
     setCurrentAgentSessionId(id)
     setActiveView('conversations')
     setActiveItem('all-chats')
+    // 追踪最近活跃的 Agent Tab
+    setLastAgentTab(id)
   }
 
   /** 重命名 Agent 会话标题 */
