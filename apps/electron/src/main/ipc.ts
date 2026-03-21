@@ -139,6 +139,7 @@ import {
   getWorkspaceAttachedDirectories,
   attachWorkspaceDirectory,
   detachWorkspaceDirectory,
+  deleteWorkspaceFilesDirectory,
 } from './lib/agent-workspace-manager'
 import { getMemoryConfig, setMemoryConfig } from './lib/memory-service'
 import { getAllToolInfos } from './lib/chat-tool-registry'
@@ -1203,6 +1204,14 @@ export function registerIpcHandlers(): void {
     AGENT_IPC_CHANNELS.GET_WORKSPACE_DIRECTORIES,
     async (_, workspaceSlug: string): Promise<string[]> => {
       return getWorkspaceAttachedDirectories(workspaceSlug)
+    }
+  )
+
+  // 删除工作区的上传文件目录
+  ipcMain.handle(
+    AGENT_IPC_CHANNELS.DELETE_WORKSPACE_FILES,
+    async (_, workspaceSlug: string): Promise<void> => {
+      deleteWorkspaceFilesDirectory(workspaceSlug)
     }
   )
 

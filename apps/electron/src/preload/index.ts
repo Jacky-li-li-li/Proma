@@ -447,6 +447,9 @@ export interface ElectronAPI {
   /** 获取工作区附加目录列表 */
   getWorkspaceDirectories: (workspaceSlug: string) => Promise<string[]>
 
+  /** 删除工作区的上传文件目录 */
+  deleteWorkspaceFilesDirectory: (workspaceSlug: string) => Promise<void>
+
   // ===== Agent 文件系统操作 =====
 
   /** 获取 session 工作路径 */
@@ -1054,6 +1057,10 @@ const electronAPI: ElectronAPI = {
 
   getWorkspaceDirectories: (workspaceSlug: string) => {
     return ipcRenderer.invoke(AGENT_IPC_CHANNELS.GET_WORKSPACE_DIRECTORIES, workspaceSlug)
+  },
+
+  deleteWorkspaceFilesDirectory: (workspaceSlug: string) => {
+    return ipcRenderer.invoke(AGENT_IPC_CHANNELS.DELETE_WORKSPACE_FILES, workspaceSlug)
   },
 
   // Agent 文件系统操作

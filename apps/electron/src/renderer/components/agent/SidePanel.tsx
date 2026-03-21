@@ -229,6 +229,18 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
     }
   }, [workspaceSlug, currentWorkspaceId, setWsAttachedDirsMap])
 
+  // 清空上传文件目录
+  const handleDeleteWorkspaceFiles = React.useCallback(async () => {
+    if (!workspaceSlug) return
+    try {
+      await window.electronAPI.deleteWorkspaceFilesDirectory(workspaceSlug)
+      // 刷新文件列表
+      setFilesVersion((prev) => prev + 1)
+    } catch (error) {
+      console.error('[SidePanel] 清空上传文件失败:', error)
+    }
+  }, [workspaceSlug, setFilesVersion])
+
   // 文件上传完成后递增版本号，触发 FileBrowser 刷新
   const handleFilesUploaded = React.useCallback(() => {
     setFilesVersion((prev) => prev + 1)
@@ -514,6 +526,8 @@ export function SidePanel({ sessionId, sessionPath }: SidePanelProps): React.Rea
                               onDetach={handleDetachWorkspaceDirectory}
                               refreshVersion={filesVersion}
                               workspaceFilesPath={workspaceFilesPath}
+                              workspaceSlug={workspaceSlug ?? ''}
+                              onDeleteWorkspaceFiles={handleDeleteWorkspaceFiles}
                             />
                           ) : null}
                         </FileDropZone>
@@ -543,10 +557,14 @@ interface WorkspaceFilesSectionProps {
   refreshVersion: number
   /** workspace-files 目录路径（用于显示上传的文件） */
   workspaceFilesPath: string | null
+  /** 工作区 slug（用于删除上传文件目录） */
+  workspaceSlug: string
+  /** 删除上传文件目录（清空所有上传的文件） */
+  onDeleteWorkspaceFiles: () => void
 }
 
 /** 工作区文件区域：统一管理所有关联的外部文件夹和上传的文件 */
-function WorkspaceFilesSection({ attachedDirs, onDetach, refreshVersion, workspaceFilesPath }: WorkspaceFilesSectionProps): React.ReactElement {
+function WorkspaceFilesSection({ attachedDirs, onDetach, refreshVersion, workspaceFilesPath, workspaceSlug, onDeleteWorkspaceFiles }: WorkspaceFilesSectionProps): React.ReactElement {
   const [selectedPaths, setSelectedPaths] = React.useState<Set<string>>(new Set())
   // 最后选中的路径（用于 Shift 范围选择的锚点）
   const lastSelectedPathRef = React.useRef<string | null>(null)
@@ -610,6 +628,7 @@ function WorkspaceFilesSection({ attachedDirs, onDetach, refreshVersion, workspa
           onSelect={handleSelect}
           refreshVersion={refreshVersion}
           isSystemDir
+          onDelete={onDeleteWorkspaceFiles}
           registerVisiblePath={registerVisiblePath}
           unregisterVisiblePath={unregisterVisiblePath}
         />
@@ -641,6 +660,8 @@ interface WorkspaceDirTreeProps {
   refreshVersion: number
   /** 是否为系统目录（workspace-files/），不可分离，显示特殊名称 */
   isSystemDir?: boolean
+  /** 系统目录的删除回调（清空目录内容） */
+  onDelete?: () => void
   /** 注册可见路径（用于 Shift 范围选择） */
   registerVisiblePath?: (path: string) => void
   /** 注销可见路径 */
@@ -648,10 +669,12 @@ interface WorkspaceDirTreeProps {
 }
 
 /** 工作区目录根节点：可展开/收起，带移除按钮 */
-function WorkspaceDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVersion, isSystemDir, registerVisiblePath, unregisterVisiblePath }: WorkspaceDirTreeProps): React.ReactElement {
+function WorkspaceDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshVersion, isSystemDir, onDelete, registerVisiblePath, unregisterVisiblePath }: WorkspaceDirTreeProps): React.ReactElement {
   const [expanded, setExpanded] = React.useState(false)
   const [children, setChildren] = React.useState<FileEntry[]>([])
   const [loaded, setLoaded] = React.useState(false)
+  // 删除确认状态
+  const [showDeleteDialog, setShowDeleteDialog] = React.useState(false)
 
   const dirName = isSystemDir ? '上传文件' : (dirPath.split('/').filter(Boolean).pop() || dirPath)
 
@@ -686,6 +709,18 @@ function WorkspaceDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshV
     onSelect(dirPath, e.ctrlKey || e.metaKey, e.shiftKey)
   }
 
+  // 执行删除
+  const handleDelete = async (): Promise<void> => {
+    try {
+      await window.electronAPI.deleteWorkspaceFilesDirectory(dirPath)
+      // 清空选中状态
+      onSelect('', false, false)
+    } catch (err) {
+      console.error('[WorkspaceDirTree] 删除失败:', err)
+    }
+    setShowDeleteDialog(false)
+  }
+
   return (
     <div>
       <div
@@ -717,12 +752,42 @@ function WorkspaceDirTree({ dirPath, onDetach, selectedPaths, onSelect, refreshV
             <X className="size-3" />
           </Button>
         )}
+        {isSystemDir && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 text-destructive hover:text-destructive"
+            onClick={(e) => { e.stopPropagation(); setShowDeleteDialog(true) }}
+          >
+            <Trash2 className="size-3" />
+          </Button>
+        )}
       </div>
       {expanded && children.length === 0 && loaded && (
         <div className="text-[11px] text-muted-foreground/50 py-1" style={{ paddingLeft: 48 }}>
           空文件夹
         </div>
       )}
+
+      {/* 删除确认对话框 */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认清空上传文件</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除"上传文件"目录中的所有文件吗？
+              此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowDeleteDialog(false)}>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {expanded && children.map((child) => (
         <WorkspaceDirItem 
           key={child.path} 

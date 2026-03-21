@@ -882,6 +882,8 @@ export const AGENT_IPC_CHANNELS = {
   DETACH_WORKSPACE_DIRECTORY: 'agent:detach-workspace-directory',
   /** 获取工作区附加目录列表 */
   GET_WORKSPACE_DIRECTORIES: 'agent:get-workspace-directories',
+  /** 删除工作区的上传文件目录（workspace-files） */
+  DELETE_WORKSPACE_FILES: 'agent:delete-workspace-files',
 
   // 文件系统操作
   /** 获取 session 工作路径 */

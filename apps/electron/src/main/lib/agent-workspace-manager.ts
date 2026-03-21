@@ -18,6 +18,7 @@ import {
   getWorkspaceSkillsDir,
   getInactiveSkillsDir,
   getDefaultSkillsDir,
+  getWorkspaceFilesDir,
 } from './config-paths'
 import type { AgentWorkspace, McpServerEntry, WorkspaceMcpConfig, SkillMeta, WorkspaceCapabilities, PromaPermissionMode } from '@proma/shared'
 
@@ -563,4 +564,29 @@ export function detachWorkspaceDirectory(workspaceSlug: string, directoryPath: s
   writeWorkspaceConfig(workspaceSlug, { ...config, attachedDirectories: updated })
   console.log(`[Agent 工作区] 已移除工作区目录: ${directoryPath} ← ${workspaceSlug}`)
   return updated
+}
+
+/**
+ * 删除工作区上传文件目录的所有内容（保留目录本身）
+ */
+export function deleteWorkspaceFilesDirectory(workspaceSlug: string): void {
+  const dir = getWorkspaceFilesDir(workspaceSlug)
+
+  if (!existsSync(dir)) {
+    return
+  }
+
+  // 删除目录下所有文件和子目录
+  const entries = readdirSync(dir)
+  for (const entry of entries) {
+    const fullPath = join(dir, entry)
+    const stat = statSync(fullPath)
+    if (stat.isDirectory()) {
+      rmSync(fullPath, { recursive: true })
+    } else {
+      rmSync(fullPath)
+    }
+  }
+
+  console.log(`[Agent 工作区] 已清空工作区上传文件目录: ${dir}`)
 }
