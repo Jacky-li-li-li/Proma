@@ -5,6 +5,7 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
+import { useFullscreenModalRegistration } from "@/hooks/use-fullscreen-modal-registration"
 
 const AlertDialog = AlertDialogPrimitive.Root
 
@@ -31,7 +32,11 @@ AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
+>(({ className, ...props }, ref) => {
+  // 全屏模态打开期间由 BrowserSlot 临时隐藏受管浏览器原生视图（WebContentsView
+  // 无法被 CSS z-index 覆盖），避免居中弹窗被右侧浏览器遮挡。
+  useFullscreenModalRegistration()
+  return (
   <AlertDialogPortal>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
@@ -48,7 +53,8 @@ const AlertDialogContent = React.forwardRef<
       {...props}
     />
   </AlertDialogPortal>
-))
+  )
+})
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName
 
 const AlertDialogHeader = ({

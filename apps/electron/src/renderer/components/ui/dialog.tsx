@@ -6,6 +6,7 @@ import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { iconButtonNoRingFocusClass } from "@/components/ui/icon-button-styles"
+import { useFullscreenModalRegistration } from "@/hooks/use-fullscreen-modal-registration"
 
 const Dialog = DialogPrimitive.Root
 
@@ -40,7 +41,12 @@ const DialogContent = React.forwardRef<
     /** 与本地容器配合时覆写 Overlay 的定位方式。 */
     overlayClassName?: string
   }
->(({ className, children, hideClose, container, overlayClassName, ...props }, ref) => (
+>(({ className, children, hideClose, container, overlayClassName, ...props }, ref) => {
+  // 受管浏览器原生 WebContentsView 无法被 CSS z-index 覆盖；全屏模态打开时
+  // 由 BrowserSlot 临时隐藏原生视图，避免弹窗被右侧浏览器遮挡。
+  // 挂在局部容器内的弹窗不遮住浏览器区域，无需登记。
+  useFullscreenModalRegistration(!container)
+  return (
   <DialogPortal container={container ?? undefined}>
     <DialogOverlay className={overlayClassName} />
     <DialogPrimitive.Content
@@ -74,7 +80,8 @@ const DialogContent = React.forwardRef<
       )}
     </DialogPrimitive.Content>
   </DialogPortal>
-))
+  )
+})
 DialogContent.displayName = DialogPrimitive.Content.displayName
 
 const DialogHeader = ({
